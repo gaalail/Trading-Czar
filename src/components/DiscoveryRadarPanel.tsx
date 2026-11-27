@@ -53,8 +53,8 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
   );
 
   return (
-    <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-      <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+    <section className="desk-surface rounded-lg overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -83,7 +83,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
             {(
               [
                 { id: 'passed', label: 'Liquid Only' },
@@ -97,7 +97,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
                 onClick={() => setFilter(tab.id)}
                 className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   filter === tab.id
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                    ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
@@ -110,7 +110,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70 disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Scanning...' : 'Scan Market'}
@@ -119,7 +119,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
       </div>
 
       {showExplain && (
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        <div className="px-5 py-3 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#070B12]/70 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
           <strong className="text-slate-900 dark:text-slate-100">How discovery works:</strong>{' '}
           The server queries market-wide <strong>Top Movers</strong> (% gainers/movers) and{' '}
           <strong>Most Actives</strong> (highest share volume), strips out your 6 core sleeve tickers,
@@ -139,7 +139,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
           {[0, 1, 2, 3].map((rowIdx) => (
             <div
               key={rowIdx}
-              className="h-9 rounded bg-slate-100 dark:bg-slate-800/60 animate-pulse"
+              className="h-9 rounded bg-slate-100/80 dark:bg-slate-800/40 opacity-60"
             />
           ))}
         </div>
@@ -185,7 +185,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
                     onClick={() => onInspectTicker(row)}
                     className={`cursor-pointer transition-colors ${
                       isInspected
-                        ? 'bg-slate-100/90 dark:bg-slate-800/70'
+                        ? 'bg-sky-500/8 dark:bg-sky-400/10'
                         : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                     }`}
                   >
@@ -228,7 +228,15 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
                       {row.passedLiquidityGate ? 'Pass' : 'Filtered'}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                      {row.discoveryScore.toFixed(1)}
+                      <div className="inline-flex items-center gap-2 justify-end">
+                        <div className="w-12 h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden hidden sm:block">
+                          <div
+                            className="h-full bg-sky-500 dark:bg-sky-400 rounded-full"
+                            style={{ width: `${Math.max(4, Math.min(100, row.discoveryScore))}%` }}
+                          />
+                        </div>
+                        <span>{row.discoveryScore.toFixed(1)}</span>
+                      </div>
                     </td>
                     <td className="py-2.5 px-4 text-right whitespace-nowrap">
                       <button
@@ -238,7 +246,7 @@ export const DiscoveryRadarPanel: React.FC<DiscoveryRadarPanelProps> = ({
                           e.stopPropagation();
                           onInspectTicker(row);
                         }}
-                        className="font-medium text-slate-700 dark:text-slate-200 hover:underline cursor-pointer"
+                        className="font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
                       >
                         {isInspected
                           ? inspectingLoading

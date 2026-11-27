@@ -12,18 +12,24 @@ interface EquityChartProps {
   activeStrategyId: StrategyId;
 }
 
-const SLEEVE_COLORS: Record<StrategyId, { stroke: string; dot: string }> = {
+const SLEEVE_COLORS: Record<
+  StrategyId,
+  { stroke: string; dot: string; hex: string }
+> = {
   'neural-perceptron': {
-    stroke: 'stroke-sky-400',
-    dot: 'bg-sky-400',
+    stroke: 'stroke-sky-500 dark:stroke-sky-400',
+    dot: 'bg-sky-500 dark:bg-sky-400',
+    hex: '#38bdf8',
   },
   'mean-reversion': {
-    stroke: 'stroke-amber-400',
-    dot: 'bg-amber-400',
+    stroke: 'stroke-amber-500 dark:stroke-amber-400',
+    dot: 'bg-amber-500 dark:bg-amber-400',
+    hex: '#fbbf24',
   },
   'regime-ensemble': {
-    stroke: 'stroke-emerald-400',
-    dot: 'bg-emerald-400',
+    stroke: 'stroke-emerald-500 dark:stroke-emerald-400',
+    dot: 'bg-emerald-500 dark:bg-emerald-400',
+    hex: '#34d399',
   },
 };
 
@@ -77,17 +83,46 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
     [primaryCurve, minVal, maxVal]
   );
 
+  const activeAreaPath = useMemo(() => {
+    if (primaryCurve.length <= 1) return '';
+    const linePts = primaryCurve.map(
+      (p, i) => `${i === 0 ? 'M' : 'L'}${xForIdx(i).toFixed(1)},${yForVal(p.equity).toFixed(1)}`
+    );
+    const lastX = xForIdx(primaryCurve.length - 1).toFixed(1);
+    const firstX = xForIdx(0).toFixed(1);
+    const baselineY = (padT + chartH).toFixed(1);
+    return `${linePts.join(' ')} L${lastX},${baselineY} L${firstX},${baselineY} Z`;
+  }, [primaryCurve, minVal, maxVal]);
+
   const activePointIdx =
     hoverIdx !== null && hoverIdx < primaryCurve.length ? hoverIdx : primaryCurve.length - 1;
-  const activeBench = primaryCurve[activePointIdx]?.benchmarkEquity ?? 100000;
+  const activePoint = primaryCurve[activePointIdx];
+  const activeBench = activePoint?.benchmarkEquity ?? 100000;
+  const activeEquity = activePoint?.equity ?? 100000;
+  const spreadPct = activeBench > 0 ? ((activeEquity - activeBench) / activeBench) * 100 : 0;
 
+  const activeColor = SLEEVE_COLORS[activeStrategyId] ?? SLEEVE_COLORS['neural-perceptron'];
   const yTicks = [minVal, (minVal + maxVal) / 2, maxVal];
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3">
-        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-          Isolated Strategy Sleeves vs. Benchmark
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800/80 px-5 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Isolated Strategy Sleeves vs. Benchmark
+          </div>
+          {activePoint && (
+            <span
+              className={`font-mono text-[11px] font-medium ${
+                spreadPct >= 0
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {spreadPct >= 0 ? '+' : ''}
+              {spreadPct.toFixed(2)}% vs Bench
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-600 dark:text-slate-400">
           {sleeves.map((s) => {
@@ -116,6 +151,13 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
           className="w-full h-[210px] select-none"
           onMouseLeave={() => setHoverIdx(null)}
         >
+          <defs>
+            <linearGradient id="tc-equity-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={activeColor.hex} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={activeColor.hex} stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+
           {yTicks.map((tick, i) => {
             const y = yForVal(tick);
             return (
@@ -125,7 +167,7 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
                   y1={y}
                   x2={width - padR}
                   y2={y}
-                  className="stroke-slate-200 dark:stroke-slate-800"
+                  className="stroke-slate-200/75 dark:stroke-slate-800/75"
                   strokeWidth={1}
                 />
                 <text
@@ -138,6 +180,8 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
               </g>
             );
           })}
+
+          {activeAreaPath && <path d={activeAreaPath} fill="url(#tc-equity-area)" />}
 
           {primaryCurve.length > 1 && (
             <path
@@ -165,10 +209,20 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
                 fill="none"
                 className={SLEEVE_COLORS[s.id].stroke}
                 strokeWidth={isSel ? 2.2 : 1.25}
-                strokeOpacity={isSel ? 1 : 0.55}
+                strokeOpacity={isSel ? 1 : 0.48}
               />
             );
           })}
+
+          {activePoint && primaryCurve.length > 0 && (
+            <circle
+              cx={xForIdx(activePointIdx)}
+              cy={yForVal(activeEquity)}
+              r={3.5}
+              className={`fill-white dark:fill-[#0B111C] ${activeColor.stroke} pointer-events-none`}
+              strokeWidth={2}
+            />
+          )}
 
           {primaryCurve.map((p, i) => {
             const cx = xForIdx(i);
@@ -181,7 +235,8 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
                     y1={padT}
                     x2={cx}
                     y2={padT + chartH}
-                    className="stroke-slate-300 dark:stroke-slate-700"
+                    className="stroke-sky-500/45 dark:stroke-sky-400/45"
+                    strokeDasharray="3 3"
                     strokeWidth={1}
                   />
                 )}
@@ -196,6 +251,16 @@ export const EquityChart: React.FC<EquityChartProps> = ({ sleeves, activeStrateg
               </g>
             );
           })}
+
+          {activePoint && (
+            <text
+              x={padL}
+              y={height - 6}
+              className="fill-slate-400 dark:fill-slate-500 font-mono text-[10px]"
+            >
+              {activePoint.timestamp}
+            </text>
+          )}
         </svg>
       </div>
     </div>

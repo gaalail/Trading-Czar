@@ -976,7 +976,7 @@ export function App() {
 
   const SidebarContent = (
     <div className="flex flex-col h-full">
-      <div className="px-5 h-14 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
+      <div className="px-5 h-14 flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 shrink-0">
         <span className="font-display text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap">
           Trading-Czar
         </span>
@@ -990,7 +990,7 @@ export function App() {
         </button>
       </div>
 
-      <nav className="p-3 space-y-1 border-b border-slate-200 dark:border-slate-800">
+      <nav className="p-3 space-y-1 border-b border-slate-200/80 dark:border-slate-800/80">
         {navItems.map((item) => {
           const active = activeTab === item.id;
           return (
@@ -1003,8 +1003,8 @@ export function App() {
               }}
               className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
                 active
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  ? 'bg-slate-900 text-white dark:bg-sky-500/15 dark:text-sky-300 dark:ring-1 dark:ring-sky-400/30'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
               <span className="flex items-center gap-2.5">
@@ -1030,7 +1030,27 @@ export function App() {
             const prev = cList[Math.max(0, cList.length - 2)];
             const pct = ((last.close - prev.close) / prev.close) * 100;
             const pos = activePortfolio.positions[profile.id];
-            const isSelected = activeSymbol === profile.id;
+            const isSelected = !isInspectingExternal && activeSymbol === profile.id;
+
+            const sparkSlice = cList.slice(-16);
+            let sMin = Infinity;
+            let sMax = -Infinity;
+            for (const c of sparkSlice) {
+              if (c.close < sMin) sMin = c.close;
+              if (c.close > sMax) sMax = c.close;
+            }
+            const sRange = Math.max(0.0001, sMax - sMin);
+            const sparkPoints = sparkSlice
+              .map((c, idx) => {
+                const x = (idx / Math.max(1, sparkSlice.length - 1)) * 42;
+                const y = 16 - ((c.close - sMin) / sRange) * 14;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+              })
+              .join(' ');
+            const sparkUp =
+              sparkSlice.length >= 2
+                ? sparkSlice[sparkSlice.length - 1].close >= sparkSlice[0].close
+                : pct >= 0;
 
             return (
               <button
@@ -1042,17 +1062,17 @@ export function App() {
                   setActiveTab('desk');
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors cursor-pointer ${
+                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-left transition-colors cursor-pointer ${
                   isSelected
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                    ? 'bg-slate-100/90 text-slate-900 ring-1 ring-slate-300/80 dark:bg-sky-500/10 dark:text-slate-100 dark:ring-sky-400/25'
                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
                 }`}
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                     <span>{profile.id}</span>
                     {pos.quantity > 0 && (
-                      <span className="text-[10px] font-mono font-normal text-slate-500 dark:text-slate-400">
+                      <span className="text-[10px] font-mono font-normal text-sky-600 dark:text-sky-400">
                         · Long
                       </span>
                     )}
@@ -1062,7 +1082,26 @@ export function App() {
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 ml-2">
+                <svg
+                  viewBox="0 0 42 18"
+                  aria-hidden="true"
+                  className="w-10 h-4 shrink-0 mx-1.5 overflow-visible"
+                >
+                  <polyline
+                    fill="none"
+                    strokeWidth={1.35}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={sparkPoints}
+                    className={
+                      sparkUp
+                        ? 'stroke-emerald-500/80 dark:stroke-emerald-400/85'
+                        : 'stroke-rose-500/80 dark:stroke-rose-400/85'
+                    }
+                  />
+                </svg>
+
+                <div className="text-right shrink-0">
                   <div className="text-xs font-mono font-medium text-slate-900 dark:text-slate-100">
                     ${last.close.toFixed(2)}
                   </div>
@@ -1083,7 +1122,7 @@ export function App() {
         </div>
       </div>
 
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+      <div className="p-4 border-t border-slate-200/80 dark:border-slate-800/80 text-xs text-slate-500 dark:text-slate-400">
         <div>
           {feedMode === 'alpaca'
             ? `Alpaca ${alpacaStatus.feed.toUpperCase()} Live Feed · Local Paper`
@@ -1101,25 +1140,25 @@ export function App() {
   );
 
   return (
-    <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-      <aside className="hidden lg:block w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+    <div className="min-h-screen flex desk-canvas-bg text-slate-900 dark:text-slate-100">
+      <aside className="hidden lg:block w-68 shrink-0 bg-white/95 dark:bg-[#080D16]/95 border-r border-slate-200/80 dark:border-slate-800/80 backdrop-blur-md">
         <div className="sticky top-0 h-screen">{SidebarContent}</div>
       </aside>
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-slate-950/40"
+            className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative z-10 w-64 max-w-[80vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 h-full">
+          <aside className="relative z-10 w-68 max-w-[82vw] bg-white dark:bg-[#080D16] border-r border-slate-200/80 dark:border-slate-800/80 h-full">
             {SidebarContent}
           </aside>
         </div>
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 h-14 bg-white/90 dark:bg-[#080D16]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -1229,7 +1268,7 @@ export function App() {
 
         <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto space-y-6">
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-5 py-4">
+            <div className="desk-surface rounded-lg px-5 py-4">
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Sleeve Net Equity · {currentStrategyConfig.name}
               </div>
@@ -1241,7 +1280,7 @@ export function App() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-5 py-4">
+            <div className="desk-surface rounded-lg px-5 py-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   Sleeve Return &amp; Alpha
@@ -1272,13 +1311,13 @@ export function App() {
                 {stats.alphaPct.toFixed(2)}% · Fees ${activePortfolio.totalFees.toFixed(2)}
               </div>
               {openMetricHelp === 'return' && (
-                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                   <strong>Alpha vs. Bench</strong> shows how much better (or worse) the AI did than simply buying and holding all 6 stocks equally over the same window.
                 </p>
               )}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-5 py-4">
+            <div className="desk-surface rounded-lg px-5 py-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   Risk-Adjusted Ratios
@@ -1300,13 +1339,13 @@ export function App() {
                 {activePortfolio.maxDrawdownPct.toFixed(2)}%
               </div>
               {openMetricHelp === 'risk' && (
-                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                   <strong>Sharpe</strong> grades return vs. total bumps. <strong>Sortino</strong> only penalizes losing drops. <strong>Calmar</strong> compares gain to <strong>Max Drawdown</strong> (worst peak-to-trough drop).
                 </p>
               )}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-5 py-4">
+            <div className="desk-surface rounded-lg px-5 py-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   Closed Trade Accuracy
@@ -1329,7 +1368,7 @@ export function App() {
                 {stats.closedCount} Closed · Profit Factor {stats.profitFactor.toFixed(2)}
               </div>
               {openMetricHelp === 'accuracy' && (
-                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                <p className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                   <strong>Profit Factor</strong> is total dollars won divided by total dollars lost. Above 1.0 means winners outweigh losers even if Win Rate is under 50%.
                 </p>
               )}
@@ -1346,10 +1385,10 @@ export function App() {
                       key={item.strategy.id}
                       type="button"
                       onClick={() => handleSelectStrategy(item.strategy.id)}
-                      className={`text-left px-4 py-3 rounded-lg border transition-colors cursor-pointer ${
+                      className={`text-left px-4 py-3 rounded-lg transition-all cursor-pointer ${
                         selected
-                          ? 'bg-white dark:bg-slate-900 border-slate-900 dark:border-slate-100'
-                          : 'bg-white/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                          ? 'desk-surface ring-1 ring-slate-900 dark:ring-sky-400/50 dark:bg-sky-500/[0.06]'
+                          : 'desk-surface opacity-80 hover:opacity-100'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -1379,8 +1418,8 @@ export function App() {
               </section>
 
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col">
-                  <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+                <div className="lg:col-span-8 desk-surface rounded-lg flex flex-col overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
                     <div>
                       <div className="flex flex-wrap items-baseline gap-3">
                         <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -1395,7 +1434,7 @@ export function App() {
                           <button
                             type="button"
                             onClick={() => setInspectedTicker(null)}
-                            className="text-xs font-medium text-slate-700 dark:text-slate-200 underline underline-offset-4 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                            className="text-xs font-medium text-sky-600 dark:text-sky-400 underline underline-offset-4 hover:opacity-80 cursor-pointer"
                           >
                             Return to {activeSymbol}
                           </button>
@@ -1420,7 +1459,7 @@ export function App() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+                      <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
                         {[
                           { label: '1x', ms: 1200 },
                           { label: '2x', ms: 650 },
@@ -1432,7 +1471,7 @@ export function App() {
                             onClick={() => setSpeedMs(sp.ms)}
                             className={`px-2 py-1 text-xs font-mono rounded transition-colors cursor-pointer ${
                               speedMs === sp.ms
-                                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                                ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                             }`}
                           >
@@ -1446,8 +1485,8 @@ export function App() {
                         onClick={() => setAutoExecuteAI((v) => !v)}
                         className={`px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap cursor-pointer ${
                           autoExecuteAI
-                            ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                            : 'bg-white text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                            ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                            : 'bg-white text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-300 dark:border-slate-800'
                         }`}
                       >
                         {autoExecuteAI ? 'Auto-Trade On' : 'Auto-Trade Off'}
@@ -1460,7 +1499,7 @@ export function App() {
                     trades={isInspectingExternal ? [] : activePortfolio.trades}
                     symbol={displayedSymbol}
                   />
-                  <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="px-5 py-3 border-t border-slate-200/80 dark:border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-50/50 dark:bg-[#070B12]/50">
                     <div>
                       <div className="text-slate-500 dark:text-slate-400">Universe Adv / Dec</div>
                       <div className="font-mono font-medium text-slate-900 dark:text-slate-100 mt-0.5">
@@ -1489,9 +1528,9 @@ export function App() {
                   </div>
                 </div>
 
-                <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col justify-between">
+                <div className="lg:col-span-4 desk-surface rounded-lg flex flex-col justify-between overflow-hidden">
                   <div>
-                    <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <div className="px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-2">
                       <div>
                         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                           AI Model Evaluation
@@ -1514,44 +1553,96 @@ export function App() {
                     </div>
 
                     <div className="p-5 space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 mb-1.5">
+                          <span>Conviction Gauge</span>
+                          <span>
+                            Gate {(currentStrategyConfig.confidenceThreshold * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="relative h-2 w-full rounded-full bg-slate-100 dark:bg-[#070B12] overflow-hidden border border-slate-200/70 dark:border-slate-800">
+                          <div
+                            className={`h-full transition-all duration-200 rounded-full ${
+                              displayedDecision.action === 'BUY'
+                                ? 'bg-emerald-500 dark:bg-emerald-400'
+                                : displayedDecision.action === 'SELL'
+                                  ? 'bg-rose-500 dark:bg-rose-400'
+                                  : 'bg-sky-500/70 dark:bg-sky-400/70'
+                            }`}
+                            style={{
+                              width: `${Math.max(4, Math.min(100, displayedDecision.confidence * 100))}%`,
+                            }}
+                          />
+                          <div
+                            aria-hidden="true"
+                            className="absolute top-0 bottom-0 w-0.5 bg-slate-900/70 dark:bg-white/80"
+                            style={{
+                              left: `${Math.min(98, Math.max(2, currentStrategyConfig.confidenceThreshold * 100))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                         {displayedDecision.rationale}
                       </p>
 
-                      <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
                           Feature Signal Breakdown
                         </div>
-                        {displayedDecision.contributions.map((feat) => (
-                          <div
-                            key={feat.label}
-                            className="flex items-center justify-between text-xs"
-                          >
-                            <span className="text-slate-700 dark:text-slate-300">
-                              {feat.label}
-                            </span>
-                            <div className="flex items-center gap-3 font-mono">
-                              <span className="text-slate-500 dark:text-slate-400">
-                                {feat.rawValue}
-                              </span>
-                              <span
-                                className={
-                                  feat.contribution >= 0
-                                    ? 'text-emerald-600 dark:text-emerald-400 font-medium w-14 text-right'
-                                    : 'text-rose-600 dark:text-rose-400 font-medium w-14 text-right'
-                                }
-                              >
-                                {feat.contribution >= 0 ? '+' : ''}
-                                {feat.contribution.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                        {(() => {
+                          const maxAbs = Math.max(
+                            0.25,
+                            ...displayedDecision.contributions.map((c) => Math.abs(c.contribution))
+                          );
+                          return displayedDecision.contributions.map((feat) => {
+                            const barPct = Math.min(
+                              100,
+                              (Math.abs(feat.contribution) / maxAbs) * 100
+                            );
+                            const positive = feat.contribution >= 0;
+                            return (
+                              <div key={feat.label} className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-slate-700 dark:text-slate-300">
+                                    {feat.label}
+                                  </span>
+                                  <div className="flex items-center gap-3 font-mono">
+                                    <span className="text-slate-500 dark:text-slate-400">
+                                      {feat.rawValue}
+                                    </span>
+                                    <span
+                                      className={
+                                        positive
+                                          ? 'text-emerald-600 dark:text-emerald-400 font-medium w-14 text-right'
+                                          : 'text-rose-600 dark:text-rose-400 font-medium w-14 text-right'
+                                      }
+                                    >
+                                      {positive ? '+' : ''}
+                                      {feat.contribution.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="h-1 w-full rounded-full bg-slate-100 dark:bg-[#070B12] overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-200 ${
+                                      positive
+                                        ? 'bg-emerald-500/75 dark:bg-emerald-400/75'
+                                        : 'bg-rose-500/75 dark:bg-rose-400/75'
+                                    }`}
+                                    style={{ width: `${Math.max(2, barPct)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="p-5 border-t border-slate-200/80 dark:border-slate-800/80 space-y-3">
                     {isInspectingExternal ? (
                       <>
                         {inspectedWfoCheck && (
@@ -1580,14 +1671,14 @@ export function App() {
                           <button
                             type="button"
                             onClick={handleSaveDiscoveryExperiment}
-                            className="px-3 py-2 text-xs font-semibold rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90 transition-opacity cursor-pointer"
+                            className="px-3 py-2 text-xs font-semibold rounded-md bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 hover:opacity-90 transition-opacity cursor-pointer"
                           >
                             {discoveryLoggedSymbol === displayedSymbol ? 'Logged Run' : 'Log Discovery Run'}
                           </button>
                           <button
                             type="button"
                             onClick={() => setInspectedTicker(null)}
-                            className="px-3 py-2 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            className="px-3 py-2 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
                           >
                             Return to {activeSymbol}
                           </button>
@@ -1630,22 +1721,22 @@ export function App() {
               </section>
 
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                <div className="lg:col-span-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                <div className="lg:col-span-6 desk-surface rounded-lg overflow-hidden">
                   <EquityChart
                     sleeves={equitySeriesForChart}
                     activeStrategyId={activeStrategyId}
                   />
                 </div>
 
-                <div className="lg:col-span-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col">
-                  <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="lg:col-span-6 desk-surface rounded-lg flex flex-col overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {currentStrategyConfig.name} Positions ({openPositions.length})
                     </span>
                     <button
                       type="button"
                       onClick={() => setActiveTab('ledger')}
-                      className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 underline underline-offset-4 cursor-pointer"
+                      className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:opacity-80 underline underline-offset-4 cursor-pointer"
                     >
                       View Sleeve Ledger
                     </button>
@@ -1664,7 +1755,7 @@ export function App() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400">
+                          <tr className="border-b border-slate-200/80 dark:border-slate-800/80 text-xs font-medium text-slate-500 dark:text-slate-400">
                             <th className="py-2.5 px-4">Symbol</th>
                             <th className="py-2.5 px-4 text-right">Qty</th>
                             <th className="py-2.5 px-4 text-right">Avg Entry</th>
@@ -1724,8 +1815,8 @@ export function App() {
                 </div>
               </section>
 
-              <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-                <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <section className="desk-surface rounded-lg overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       Universe Setup Scanner · {currentStrategyConfig.name}
@@ -1742,7 +1833,7 @@ export function App() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      <tr className="border-b border-slate-200/80 dark:border-slate-800/80 text-xs font-medium text-slate-500 dark:text-slate-400">
                         <th className="py-2.5 px-4">Symbol</th>
                         <th className="py-2.5 px-4 text-right">Last Price</th>
                         <th className="py-2.5 px-4">Regime</th>
@@ -1766,7 +1857,7 @@ export function App() {
                             }}
                             className={`cursor-pointer transition-colors ${
                               isSelected
-                                ? 'bg-slate-100/90 dark:bg-slate-800/70'
+                                ? 'bg-sky-500/8 dark:bg-sky-400/10'
                                 : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                             }`}
                           >
@@ -1805,7 +1896,17 @@ export function App() {
                               {row.action} · {(row.confidence * 100).toFixed(0)}%
                             </td>
                             <td className="py-2.5 px-4 text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                              {row.opportunityScore.toFixed(1)}
+                              <div className="inline-flex items-center gap-2 justify-end">
+                                <div className="w-12 h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden hidden sm:block">
+                                  <div
+                                    className="h-full bg-sky-500 dark:bg-sky-400 rounded-full"
+                                    style={{
+                                      width: `${Math.max(4, Math.min(100, row.opportunityScore))}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span>{row.opportunityScore.toFixed(1)}</span>
+                              </div>
                             </td>
                           </tr>
                         );

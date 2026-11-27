@@ -102,10 +102,23 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
     return `${topPts.join(' ')} ${botPts.join(' ')} Z`;
   }, [visibleCandles, stepX, minPrice, maxPrice]);
 
+  const latestCandle = visibleCandles[visibleCandles.length - 1];
   const activeCandle =
     hoverIndex !== null && visibleCandles[hoverIndex]
       ? visibleCandles[hoverIndex]
-      : visibleCandles[visibleCandles.length - 1];
+      : latestCandle;
+
+  const hoverCx =
+    hoverIndex !== null && visibleCandles[hoverIndex]
+      ? padLeft + hoverIndex * stepX + stepX / 2
+      : null;
+  const hoverCy =
+    hoverIndex !== null && visibleCandles[hoverIndex]
+      ? yForPrice(visibleCandles[hoverIndex].close)
+      : null;
+
+  const latestCloseY = latestCandle ? yForPrice(latestCandle.close) : null;
+  const latestIsUp = latestCandle ? latestCandle.close >= latestCandle.open : true;
 
   const yTicks = useMemo(() => {
     const count = 5;
@@ -118,7 +131,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800/80 px-5 py-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
           <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
             {activeCandle.timestamp}
@@ -133,7 +146,9 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
           <span aria-hidden="true">·</span>
           <span className="font-mono">RSI {activeCandle.rsi14.toFixed(1)}</span>
           <span aria-hidden="true">·</span>
-          <span className="font-mono">VWAP {activeCandle.vwap.toFixed(2)}</span>
+          <span className="font-mono text-teal-600 dark:text-teal-400">
+            VWAP {activeCandle.vwap.toFixed(2)}
+          </span>
           <span aria-hidden="true">·</span>
           <span className="font-mono">ADX {activeCandle.adx14.toFixed(1)}</span>
           <span aria-hidden="true">·</span>
@@ -146,8 +161,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
             onClick={() => setShowVwap((v) => !v)}
             className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               showVwap
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
+                ? 'bg-teal-500/12 text-teal-700 border-teal-500/35 dark:bg-teal-400/15 dark:text-teal-300 dark:border-teal-400/35'
+                : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-900 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
             }`}
           >
             {showVwap ? 'VWAP On' : 'VWAP Off'}
@@ -158,8 +173,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
             onClick={() => setShowBands((v) => !v)}
             className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               showBands
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
+                ? 'bg-violet-500/12 text-violet-700 border-violet-500/35 dark:bg-violet-400/15 dark:text-violet-300 dark:border-violet-400/35'
+                : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-900 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
             }`}
           >
             {showBands ? 'Bollinger (20,2σ) On' : 'Bollinger Off'}
@@ -170,8 +185,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
             onClick={() => setShowEma((v) => !v)}
             className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               showEma
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
+                ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-900 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
             }`}
           >
             {showEma ? 'EMA 9/21 On' : 'EMA 9/21 Off'}
@@ -185,6 +200,17 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
           className="w-full h-[300px] sm:h-[340px] select-none"
           onMouseLeave={() => setHoverIndex(null)}
         >
+          <defs>
+            <linearGradient id="tc-vol-up" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.32" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0.04" />
+            </linearGradient>
+            <linearGradient id="tc-vol-down" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.32" />
+              <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.04" />
+            </linearGradient>
+          </defs>
+
           {yTicks.map((tick, i) => {
             const y = yForPrice(tick);
             return (
@@ -194,7 +220,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
                   y1={y}
                   x2={width - padRight}
                   y2={y}
-                  className="stroke-slate-200/80 dark:stroke-slate-800/80"
+                  className="stroke-slate-200/75 dark:stroke-slate-800/75"
                   strokeWidth={1}
                 />
                 <text
@@ -207,6 +233,45 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
               </g>
             );
           })}
+
+          {latestCandle && latestCloseY !== null && (
+            <g>
+              <line
+                x1={padLeft}
+                y1={latestCloseY}
+                x2={width - padRight}
+                y2={latestCloseY}
+                className={
+                  latestIsUp
+                    ? 'stroke-emerald-500/45 dark:stroke-emerald-400/40'
+                    : 'stroke-rose-500/45 dark:stroke-rose-400/40'
+                }
+                strokeDasharray="2 3"
+                strokeWidth={1}
+              />
+              <rect
+                x={width - padRight + 3}
+                y={latestCloseY - 9}
+                width={padRight - 7}
+                height={18}
+                rx={3}
+                className={
+                  latestIsUp
+                    ? 'fill-emerald-600 dark:fill-emerald-500'
+                    : 'fill-rose-600 dark:fill-rose-500'
+                }
+              />
+              <text
+                x={width - padRight + 8}
+                y={latestCloseY + 3.5}
+                className="fill-white font-mono text-[10px] font-semibold"
+              >
+                {latestCandle.close >= 1000
+                  ? latestCandle.close.toFixed(0)
+                  : latestCandle.close.toFixed(2)}
+              </text>
+            </g>
+          )}
 
           {showBands && bbFillPath && (
             <>
@@ -240,11 +305,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
                 y={volY}
                 width={candleW}
                 height={volH}
-                className={
-                  isUp
-                    ? 'fill-emerald-500/15 dark:fill-emerald-400/15'
-                    : 'fill-rose-500/15 dark:fill-rose-400/15'
-                }
+                rx={0.5}
+                fill={isUp ? 'url(#tc-vol-up)' : 'url(#tc-vol-down)'}
               />
             );
           })}
@@ -276,6 +338,29 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
             />
           )}
 
+          {hoverCx !== null && hoverCy !== null && (
+            <g className="pointer-events-none">
+              <line
+                x1={hoverCx}
+                y1={padTop}
+                x2={hoverCx}
+                y2={padTop + chartH}
+                className="stroke-sky-500/45 dark:stroke-sky-400/45"
+                strokeDasharray="3 3"
+                strokeWidth={1}
+              />
+              <line
+                x1={padLeft}
+                y1={hoverCy}
+                x2={width - padRight}
+                y2={hoverCy}
+                className="stroke-sky-500/35 dark:stroke-sky-400/35"
+                strokeDasharray="3 3"
+                strokeWidth={1}
+              />
+            </g>
+          )}
+
           {visibleCandles.map((c, idx) => {
             const cx = padLeft + idx * stepX + stepX / 2;
             const yHigh = yForPrice(c.high);
@@ -289,17 +374,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
 
             return (
               <g key={c.index}>
-                {hoverIndex === idx && (
-                  <line
-                    x1={cx}
-                    y1={padTop}
-                    x2={cx}
-                    y2={padTop + chartH}
-                    className="stroke-slate-400/60 dark:stroke-slate-500/60"
-                    strokeDasharray="3 3"
-                    strokeWidth={1}
-                  />
-                )}
                 <line
                   x1={cx}
                   y1={yHigh}
@@ -355,6 +429,16 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
               </g>
             );
           })}
+
+          {hoverCx !== null && hoverCy !== null && (
+            <circle
+              cx={hoverCx}
+              cy={hoverCy}
+              r={3.5}
+              className="fill-white dark:fill-[#0B111C] stroke-sky-500 dark:stroke-sky-400 pointer-events-none"
+              strokeWidth={1.8}
+            />
+          )}
 
           {visibleCandles
             .filter((_, idx) => idx % 10 === 0 || idx === visibleCandles.length - 1)

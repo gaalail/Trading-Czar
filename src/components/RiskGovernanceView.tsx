@@ -31,8 +31,8 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-          <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+        <div className="lg:col-span-5 desk-surface rounded-lg overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 Fail-Closed Risk Gateway
@@ -145,8 +145,8 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap cursor-pointer ${
                   limits.enforceMarketHours
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {limits.enforceMarketHours ? 'Enforced' : 'Bypassed'}
@@ -169,8 +169,8 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap cursor-pointer ${
                   limits.flattenBeforeClose
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {limits.flattenBeforeClose ? 'Enabled' : 'Off'}
@@ -196,7 +196,7 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxBarAgeMinutes: Number(e.target.value) })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
               <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 Blocks new live buys if Alpaca&apos;s newest bar timestamp lags behind wall clock beyond limit
@@ -222,7 +222,7 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxPortfolioExposurePct: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -245,7 +245,7 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxSinglePositionPct: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -268,7 +268,7 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxCorrelatedExposurePct: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
               <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                 Caps combined exposure across stocks with &ge; 0.65 rolling correlation to SPY
@@ -294,7 +294,7 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxOrderNotional: Number(e.target.value) })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -317,14 +317,14 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 onChange={(e) =>
                   onUpdateLimits({ maxBarVolumePct: Number(e.target.value) / 1000 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
           </div>
         </div>
 
-        <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col">
-          <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="lg:col-span-7 desk-surface rounded-lg flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Risk &amp; Audit Event Log
             </h2>

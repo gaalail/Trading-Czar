@@ -33,8 +33,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="lg:col-span-7 desk-surface rounded-lg overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             Decision Engine &amp; Risk Parameters
           </h2>
@@ -54,8 +54,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                   onClick={() => onSelectStrategy(strat.id)}
                   className={`text-left p-4 rounded-lg border transition-colors cursor-pointer ${
                     selected
-                      ? 'border-slate-900 bg-slate-50 dark:border-slate-100 dark:bg-slate-800/70'
-                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                      ? 'border-slate-900 bg-slate-50/90 dark:border-sky-400/50 dark:bg-sky-500/[0.08]'
+                      : 'border-slate-200/80 dark:border-slate-800/80 bg-slate-50/40 dark:bg-[#070B12]/60 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -89,7 +89,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ confidenceThreshold: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Minimum sigmoid probability required to open or close a position.
@@ -115,7 +115,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ maxPositionPct: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Maximum percentage of total portfolio equity allocated per symbol.
@@ -141,7 +141,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ stopLossPct: Number(e.target.value) / 1000 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -164,7 +164,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ takeProfitPct: Number(e.target.value) / 1000 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -187,7 +187,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onChange={(e) =>
                   onUpdateConfig({ learningRate: Number(e.target.value) / 100 })
                 }
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
 
@@ -208,7 +208,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 step={1}
                 value={strategyConfig.feeBps}
                 onChange={(e) => onUpdateConfig({ feeBps: Number(e.target.value) })}
-                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+                className="w-full accent-sky-600 dark:accent-sky-400 cursor-pointer"
               />
             </div>
           </div>
@@ -234,8 +234,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   strategyConfig.useAtrSizingAndStops
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {strategyConfig.useAtrSizingAndStops ? 'Enabled' : 'Fixed %'}
@@ -256,8 +256,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 onClick={() => onUpdateConfig({ useBreadthFilter: !strategyConfig.useBreadthFilter })}
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   strategyConfig.useBreadthFilter
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {strategyConfig.useBreadthFilter ? 'Enabled' : 'Off'}
@@ -280,8 +280,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   strategyConfig.useTimeOfDayFilter
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {strategyConfig.useTimeOfDayFilter ? 'Enabled' : 'Off'}
@@ -304,8 +304,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   strategyConfig.useVwapAnchor
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {strategyConfig.useVwapAnchor ? 'Enabled' : 'Off'}
@@ -328,8 +328,8 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 }
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   strategyConfig.useAdxRegimeGate
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                    ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                 }`}
               >
                 {strategyConfig.useAdxRegimeGate ? 'Enabled' : 'Off'}
@@ -339,9 +339,9 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
         </div>
       </div>
 
-      <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col justify-between">
+      <div className="lg:col-span-5 desk-surface rounded-lg flex flex-col justify-between overflow-hidden">
         <div>
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 Online Neural Feature Weights
@@ -353,7 +353,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
             <button
               type="button"
               onClick={onResetWeights}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset Weights
@@ -381,7 +381,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                       {item.value.toFixed(3)}
                     </span>
                   </div>
-                  <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-sm overflow-hidden">
+                  <div className="h-2 bg-slate-100 dark:bg-[#070B12] border border-slate-200/60 dark:border-slate-800/80 rounded-sm overflow-hidden">
                     <div
                       className={`h-full transition-all duration-150 ${
                         positive
@@ -397,7 +397,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+        <div className="px-5 py-4 border-t border-slate-200/80 dark:border-slate-800/80 text-xs text-slate-500 dark:text-slate-400 leading-relaxed bg-slate-50/50 dark:bg-[#070B12]/50">
           Weights adapt automatically after each closed AI round-trip in Momentum Perceptron mode using the saved <strong>entry-bar feature snapshot</strong> and realized trade outcome.
         </div>
       </div>

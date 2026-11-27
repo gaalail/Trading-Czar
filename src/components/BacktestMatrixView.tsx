@@ -199,8 +199,8 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="desk-surface rounded-lg overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Walk-Forward Out-of-Sample Lab
@@ -215,7 +215,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
               {[180, 240, 360].map((bars) => (
                 <button
                   key={bars}
@@ -223,7 +223,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                   onClick={() => setHorizonBars(bars)}
                   className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     horizonBars === bars
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
@@ -232,7 +232,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
               {[60, 65, 75].map((split) => (
                 <button
                   key={split}
@@ -240,7 +240,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                   onClick={() => setInSamplePct(split)}
                   className={`px-2.5 py-1 text-xs font-mono rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     inSamplePct === split
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
@@ -249,7 +249,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+            <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
               {[5, 15, 30].map((bps) => (
                 <button
                   key={bps}
@@ -257,7 +257,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                   onClick={() => setFeeBps(bps)}
                   className={`px-2.5 py-1 text-xs font-mono rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     feeBps === bps
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
@@ -270,7 +270,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortKey)}
               aria-label="Sort backtest matrix"
-              className="px-3 py-1.5 text-xs font-medium bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 cursor-pointer"
+              className="px-3 py-1.5 text-xs font-medium bg-slate-50 dark:bg-[#070B12] border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 cursor-pointer"
             >
               <option value="outOfSampleSharpe">Sort by OOS Sharpe</option>
               <option value="outOfSampleReturnPct">Sort by OOS Return</option>
@@ -282,7 +282,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
             <button
               type="button"
               onClick={() => setRunVersion((v) => v + 1)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded-md hover:opacity-90 transition-opacity whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 rounded-md hover:opacity-90 transition-opacity whitespace-nowrap shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Recompute
@@ -290,7 +290,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-5 py-3 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#070B12]/60 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-medium text-slate-700 dark:text-slate-300">
               Dataset Target:
@@ -391,8 +391,8 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                   onClick={() => onToggleGlobalFilter(item.key)}
                   className={`px-2 py-1 rounded border font-mono transition-colors cursor-pointer ${
                     allOn
-                      ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                      : 'bg-white text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700'
+                      ? 'bg-sky-500/12 text-sky-700 border-sky-500/35 dark:bg-sky-400/15 dark:text-sky-300 dark:border-sky-400/35'
+                      : 'bg-white text-slate-600 border-slate-200 dark:bg-[#070B12] dark:text-slate-400 dark:border-slate-800'
                   }`}
                 >
                   {item.label}: {allOn ? 'ON' : 'OFF'}
@@ -404,8 +404,8 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
           {datasetError && <div className="text-xs text-rose-500">{datasetError}</div>}
         </div>
 
-        <div className="border-b border-slate-200 dark:border-slate-800">
-          <div className="px-5 py-3 bg-slate-50/50 dark:bg-slate-950/30 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <div className="border-b border-slate-200/80 dark:border-slate-800/80">
+          <div className="px-5 py-3 bg-slate-50/50 dark:bg-[#070B12]/40 border-b border-slate-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                 Portfolio-Level Multi-Asset Contention (Shared $100,000 Cash Pool)

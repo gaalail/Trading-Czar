@@ -69,8 +69,8 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+    <div className="desk-surface rounded-lg overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800/80">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             Execution Ledger
@@ -88,11 +88,11 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter symbol or rationale..."
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-slate-100/20"
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-[#070B12] border border-slate-200 dark:border-slate-800 rounded-md text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
             />
           </div>
 
-          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
             {(['ALL', 'BUY', 'SELL'] as const).map((side) => (
               <button
                 key={side}
@@ -100,7 +100,7 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
                 onClick={() => setSideFilter(side)}
                 className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   sideFilter === side
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                    ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
@@ -109,7 +109,7 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
             ))}
           </div>
 
-          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+          <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-[#070B12] border border-slate-200/70 dark:border-slate-800 rounded-md">
             {(['ALL', 'AI', 'MANUAL'] as const).map((orig) => (
               <button
                 key={orig}
@@ -117,7 +117,7 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
                 onClick={() => setOriginFilter(orig)}
                 className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   originFilter === orig
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                    ? 'bg-white dark:bg-slate-800/90 text-slate-900 dark:text-sky-300 shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
@@ -130,7 +130,7 @@ export const TradeLedgerView: React.FC<TradeLedgerViewProps> = ({ trades, onStep
             type="button"
             onClick={handleExportCsv}
             disabled={filtered.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             Export CSV
