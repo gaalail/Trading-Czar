@@ -6,6 +6,11 @@ export interface AlpacaBridgeStatus {
   configured: boolean;
   paperOnlyLocked: boolean;
   feed: string;
+  accountConnected?: boolean;
+  accountStatus?: string;
+  equity?: number;
+  buyingPower?: number;
+  error?: string;
 }
 
 interface RiskGovernanceViewProps {
@@ -96,20 +101,31 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-mono">
                   <span
                     className={
-                      alpacaStatus.configured
+                      alpacaStatus.accountConnected
                         ? 'font-semibold text-emerald-600 dark:text-emerald-400'
-                        : 'text-slate-600 dark:text-slate-300'
+                        : alpacaStatus.configured
+                          ? 'font-semibold text-amber-600 dark:text-amber-400'
+                          : 'text-slate-600 dark:text-slate-300'
                     }
                   >
-                    {alpacaStatus.configured
-                      ? 'Connected (Paper Account)'
-                      : 'Not Configured — Using Local Simulator'}
+                    {alpacaStatus.accountConnected
+                      ? `Verified Paper Account (${alpacaStatus.accountStatus ?? 'ACTIVE'})`
+                      : alpacaStatus.configured
+                        ? alpacaStatus.error || 'Keys Present — Checking Paper Account'
+                        : 'Not Configured — Using Local Simulator'}
                   </span>
                   <span className="text-slate-500 dark:text-slate-400">
                     {alpacaStatus.paperOnlyLocked ? 'PAPER_ONLY URL' : 'URL Blocked'} · Feed{' '}
                     {alpacaStatus.feed.toUpperCase()}
                   </span>
                 </div>
+                {alpacaStatus.accountConnected && typeof alpacaStatus.equity === 'number' && (
+                  <div className="mt-1 font-mono text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                    Paper Equity ${alpacaStatus.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {typeof alpacaStatus.buyingPower === 'number' &&
+                      ` · Buying Power $${alpacaStatus.buyingPower.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </div>
+                )}
               </div>
             </div>
 

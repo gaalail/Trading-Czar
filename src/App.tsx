@@ -180,13 +180,38 @@ export function App() {
     let active = true;
     fetch('/api/alpaca/status')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: Partial<AlpacaBridgeStatus> | null) => {
+      .then(async (data: Partial<AlpacaBridgeStatus> | null) => {
         if (!active || !data) return;
-        setAlpacaStatus({
+        const baseStatus: AlpacaBridgeStatus = {
           configured: Boolean(data.configured),
           paperOnlyLocked: data.paperOnlyLocked !== false,
           feed: typeof data.feed === 'string' ? data.feed : 'iex',
-        });
+        };
+        if (baseStatus.configured) {
+          try {
+            const accRes = await fetch('/api/alpaca/account');
+            const acc = (await accRes.json()) as {
+              connected?: boolean;
+              status?: string;
+              equity?: number;
+              buyingPower?: number;
+              error?: string;
+            };
+            if (!active) return;
+            setAlpacaStatus({
+              ...baseStatus,
+              accountConnected: Boolean(acc.connected),
+              accountStatus: acc.status,
+              equity: acc.equity,
+              buyingPower: acc.buyingPower,
+              error: acc.error,
+            });
+            return;
+          } catch {
+            // Fall through to base status
+          }
+        }
+        setAlpacaStatus(baseStatus);
       })
       .catch(() => {
         // Keep safe local simulation defaults when backend status is unavailable

@@ -62,6 +62,15 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
+  const etFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
   app.get('/api/alpaca/status', (_req, res) => {
     const cfg = getAlpacaPaperConfig();
     res.json({
@@ -70,6 +79,61 @@ async function startServer() {
       feed: cfg.feed,
       allowedSymbols: Array.from(ALLOWED_SYMBOLS),
     });
+  });
+
+  app.get('/api/alpaca/account', async (_req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        connected: false,
+        paperOnlyLocked: false,
+        error: 'Fail-closed guard: non-paper Alpaca URLs are blocked.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.json({
+        connected: false,
+        paperOnlyLocked: true,
+        error: 'Alpaca paper API keys are not configured.',
+      });
+    }
+
+    try {
+      const response = await fetch(`${PAPER_BASE_URL}/v2/account`, {
+        headers: {
+          'APCA-API-KEY-ID': cfg.apiKey,
+          'APCA-API-SECRET-KEY': cfg.apiSecret,
+        },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({
+          connected: false,
+          paperOnlyLocked: true,
+          error: `Alpaca account check failed (${response.status}): ${text.slice(0, 160)}`,
+        });
+      }
+      const account = (await response.json()) as {
+        status?: string;
+        equity?: string;
+        buying_power?: string;
+        cash?: string;
+      };
+      return res.json({
+        connected: true,
+        paperOnlyLocked: true,
+        status: account.status ?? 'UNKNOWN',
+        equity: Number(account.equity ?? 0),
+        buyingPower: Number(account.buying_power ?? 0),
+        cash: Number(account.cash ?? 0),
+      });
+    } catch (err) {
+      return res.status(502).json({
+        connected: false,
+        paperOnlyLocked: true,
+        error: err instanceof Error ? err.message : 'Unable to reach Alpaca paper account API.',
+      });
+    }
   });
 
   app.get('/api/alpaca/bars', async (req, res) => {
@@ -92,9 +156,10 @@ async function startServer() {
     }
 
     const limit = Math.min(500, Math.max(60, Number(req.query.limit || 240)));
+    const startIso = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
 
     try {
-      const url = `${DATA_BASE_URL}/v2/stocks/${encodeURIComponent(rawSymbol)}/bars?timeframe=15Min&limit=${limit}&adjustment=split&feed=${cfg.feed}`;
+      const url = `${DATA_BASE_URL}/v2/stocks/${encodeURIComponent(rawSymbol)}/bars?timeframe=15Min&start=${encodeURIComponent(startIso)}&limit=${limit}&sort=desc&adjustment=split&feed=${cfg.feed}`;
       const response = await fetch(url, {
         headers: {
           'APCA-API-KEY-ID': cfg.apiKey,
@@ -112,19 +177,21 @@ async function startServer() {
       const payload = (await response.json()) as {
         bars?: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
       };
-      const rawBars = payload.bars ?? [];
+      const rawBars = (payload.bars ?? []).slice().reverse();
       const bars = rawBars.map((b, idx) => {
         const d = new Date(b.t);
-        const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
-        // 14:30 - 21:00 UTC approximates 09:30 - 16:00 ET (standard) / 13:30 - 20:00 (DST)
-        const isRegularHours = mins >= 13 * 60 + 30 && mins < 21 * 60;
-        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const dd = String(d.getUTCDate()).padStart(2, '0');
-        const hh = String(d.getUTCHours()).padStart(2, '0');
-        const min = String(d.getUTCMinutes()).padStart(2, '0');
+        const parts = Object.fromEntries(
+          etFormatter.formatToParts(d).map((p) => [p.type, p.value])
+        );
+        const hhNum = Number(parts.hour === '24' ? '00' : parts.hour);
+        const minNum = Number(parts.minute);
+        const mins = hhNum * 60 + minNum;
+        const isRegularHours = mins >= 9 * 60 + 30 && mins < 16 * 60;
+        const hhStr = String(hhNum).padStart(2, '0');
+        const minStr = String(minNum).padStart(2, '0');
         return {
           index: idx,
-          timestamp: `${mm}-${dd} ${hh}:${min}`,
+          timestamp: `${parts.month}-${parts.day} ${hhStr}:${minStr}`,
           isRegularHours,
           open: b.o,
           high: b.h,
