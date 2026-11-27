@@ -48,6 +48,7 @@ import type {
   ExperimentRecord,
   ModelDecision,
   PortfolioState,
+  RawCandle,
   RiskLimits,
   StrategyConfig,
   StrategyId,
@@ -171,10 +172,117 @@ export function App() {
   const [openMetricHelp, setOpenMetricHelp] = useState<
     'return' | 'risk' | 'accuracy' | null
   >(null);
+  const [feedMode, setFeedMode] = useState<'simulated' | 'alpaca'>('simulated');
+  const [alpacaSyncing, setAlpacaSyncing] = useState(false);
+  const [alpacaFeedError, setAlpacaFeedError] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  const syncAlpacaLiveWorkspace = useCallback(
+    async (resetSleeves: boolean, forceStep: boolean): Promise<boolean> => {
+      setAlpacaSyncing(true);
+      try {
+        const res = await fetch('/api/alpaca/universe-bars?limit=140');
+        const payload = (await res.json()) as {
+          barsBySymbol?: Record<string, RawCandle[]>;
+          error?: string;
+        };
+        if (!res.ok || !payload.barsBySymbol) {
+          throw new Error(payload.error || 'Failed to load Alpaca market bars.');
+        }
+
+        const nextCandles = {} as Record<SymbolId, Candle[]>;
+        for (const profile of SYMBOL_LIST) {
+          const raw = payload.barsBySymbol[profile.id];
+          if (!Array.isArray(raw) || raw.length < 25) {
+            throw new Error(`Insufficient Alpaca bars returned for ${profile.id}.`);
+          }
+          nextCandles[profile.id] = enrichMarketIntelligence(raw);
+        }
+
+        setWorkspace((prev) => {
+          if (resetSleeves) {
+            const sleeves = {} as Record<StrategyId, PortfolioState>;
+            const decisionsByStrategy = {} as Record<StrategyId, Record<SymbolId, ModelDecision>>;
+            for (const strat of STRATEGY_LIST) {
+              sleeves[strat.id] = createInitialPortfolio(strat.id, INITIAL_CAPITAL, nextCandles);
+              decisionsByStrategy[strat.id] = {} as Record<SymbolId, ModelDecision>;
+              const cfg = strategyConfigs[strat.id];
+              for (const profile of SYMBOL_LIST) {
+                decisionsByStrategy[strat.id][profile.id] = evaluateModel(
+                  profile.id,
+                  nextCandles[profile.id],
+                  cfg,
+                  sleeves[strat.id].weights,
+                  false,
+                  0,
+                  computeMarketBreadth(nextCandles, profile.id)
+                );
+              }
+            }
+            return {
+              candlesBySymbol: nextCandles,
+              seedsBySymbol: prev.seedsBySymbol,
+              sleeves,
+              decisionsByStrategy,
+            };
+          }
+
+          const hasChanged = SYMBOL_LIST.some((profile) => {
+            const prevLast = prev.candlesBySymbol[profile.id]?.[prev.candlesBySymbol[profile.id].length - 1];
+            const nextLast = nextCandles[profile.id][nextCandles[profile.id].length - 1];
+            return (
+              !prevLast ||
+              prevLast.timestamp !== nextLast.timestamp ||
+              prevLast.close !== nextLast.close ||
+              prevLast.volume !== nextLast.volume
+            );
+          });
+
+          if (!hasChanged && !forceStep) {
+            return prev;
+          }
+
+          const nextSleeves = { ...prev.sleeves };
+          const nextDecisions = { ...prev.decisionsByStrategy };
+          for (const strat of STRATEGY_LIST) {
+            const cfg = strategyConfigs[strat.id];
+            const stepped = stepAISignals(
+              prev.sleeves[strat.id],
+              nextCandles,
+              cfg,
+              autoExecuteAI,
+              riskLimits
+            );
+            nextSleeves[strat.id] = markToMarketAndRecord(
+              stepped.portfolio,
+              nextCandles,
+              activeSymbol
+            );
+            nextDecisions[strat.id] = stepped.decisions;
+          }
+
+          return {
+            candlesBySymbol: nextCandles,
+            seedsBySymbol: prev.seedsBySymbol,
+            sleeves: nextSleeves,
+            decisionsByStrategy: nextDecisions,
+          };
+        });
+
+        setAlpacaFeedError(null);
+        return true;
+      } catch (err) {
+        setAlpacaFeedError(err instanceof Error ? err.message : 'Unable to sync Alpaca bars.');
+        return false;
+      } finally {
+        setAlpacaSyncing(false);
+      }
+    },
+    [strategyConfigs, autoExecuteAI, riskLimits, activeSymbol]
+  );
 
   useEffect(() => {
     let active = true;
@@ -206,6 +314,12 @@ export function App() {
               buyingPower: acc.buyingPower,
               error: acc.error,
             });
+            if (acc.connected) {
+              const ok = await syncAlpacaLiveWorkspace(true, false);
+              if (active && ok) {
+                setFeedMode('alpaca');
+              }
+            }
             return;
           } catch {
             // Fall through to base status
@@ -239,6 +353,8 @@ export function App() {
     return () => {
       active = false;
     };
+    // Initial boot synchronization only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -253,6 +369,10 @@ export function App() {
   const activePortfolio = workspace.sleeves[activeStrategyId];
 
   const advanceMarketBar = useCallback(() => {
+    if (feedMode === 'alpaca') {
+      void syncAlpacaLiveWorkspace(false, true);
+      return;
+    }
     setWorkspace((prev) => {
       const nextCandles = { ...prev.candlesBySymbol };
       const nextSeeds = { ...prev.seedsBySymbol };
@@ -294,22 +414,45 @@ export function App() {
         decisionsByStrategy: nextDecisions,
       };
     });
-  }, [strategyConfigs, autoExecuteAI, activeSymbol, riskLimits]);
+  }, [feedMode, syncAlpacaLiveWorkspace, strategyConfigs, autoExecuteAI, activeSymbol, riskLimits]);
 
   useEffect(() => {
     if (!isRunning) return;
+    if (feedMode === 'alpaca') {
+      const timer = window.setInterval(() => {
+        void syncAlpacaLiveWorkspace(false, false);
+      }, 15000);
+      return () => window.clearInterval(timer);
+    }
     const timer = window.setInterval(() => {
       advanceMarketBar();
     }, speedMs);
     return () => window.clearInterval(timer);
-  }, [isRunning, speedMs, advanceMarketBar]);
+  }, [isRunning, feedMode, speedMs, advanceMarketBar, syncAlpacaLiveWorkspace]);
 
   const handleReset = useCallback(() => {
     setIsRunning(false);
+    if (feedMode === 'alpaca') {
+      void syncAlpacaLiveWorkspace(true, false);
+      return;
+    }
     const nextSalt = resetSalt + 37;
     setResetSalt(nextSalt);
     setWorkspace(createWorkspace(strategyConfigs, riskLimits, 0, nextSalt));
-  }, [resetSalt, strategyConfigs, riskLimits]);
+  }, [feedMode, syncAlpacaLiveWorkspace, resetSalt, strategyConfigs, riskLimits]);
+
+  const handleToggleFeedMode = useCallback(() => {
+    setIsRunning(false);
+    if (feedMode === 'simulated') {
+      void syncAlpacaLiveWorkspace(true, false).then((ok) => {
+        if (ok) setFeedMode('alpaca');
+      });
+    } else {
+      setFeedMode('simulated');
+      setAlpacaFeedError(null);
+      setWorkspace(createWorkspace(strategyConfigs, riskLimits, 18, resetSalt));
+    }
+  }, [feedMode, syncAlpacaLiveWorkspace, strategyConfigs, riskLimits, resetSalt]);
 
   const handleManualOrder = (side: 'BUY' | 'SELL', targetSymbol: SymbolId = activeSymbol) => {
     setWorkspace((prev) => {
@@ -486,13 +629,19 @@ export function App() {
       createdAt: new Date().toISOString(),
       title: `${cfg.name} Live Multi-Asset Sleeve Snapshot`,
       hypothesis: `Evaluating live isolated paper sleeve for ${cfg.name} across 6 US equities & ETFs with Risk Gateway limits active.`,
-      limitations: `Simulated streaming market bars (seed ${resetSalt}); ${curve.length} recorded equity points.`,
+      limitations:
+        feedMode === 'alpaca'
+          ? `Live Alpaca ${alpacaStatus.feed.toUpperCase()} 15m market feed with local paper sleeves; ${curve.length} recorded equity points.`
+          : `Simulated streaming market bars (seed ${resetSalt}); ${curve.length} recorded equity points.`,
       verdict: 'Pending Review',
       strategyId: cfg.id,
       strategyName: cfg.name,
       strategyVersion: cfg.version,
       symbol: 'MULTI-ASSET',
-      datasetFingerprint: `live-sim-15m-s${resetSalt}-b${latestCandle.index}`,
+      datasetFingerprint:
+        feedMode === 'alpaca'
+          ? `alpaca-${alpacaStatus.feed}-15m-b${latestCandle.index}`
+          : `live-sim-15m-s${resetSalt}-b${latestCandle.index}`,
       horizonBars: curve.length,
       feeBps: cfg.feeBps,
       parameters: {
@@ -675,7 +824,11 @@ export function App() {
       </div>
 
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
-        <div>Paper Mode · No Margin · No Short</div>
+        <div>
+          {feedMode === 'alpaca'
+            ? `Alpaca ${alpacaStatus.feed.toUpperCase()} Live Feed · Local Paper`
+            : 'Simulated Feed · Paper Mode'}
+        </div>
         <div className="mt-0.5 font-mono">
           {riskLimits.halted
             ? 'Gateway Halted'
@@ -738,13 +891,34 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {alpacaStatus.configured && (
+              <button
+                type="button"
+                onClick={handleToggleFeedMode}
+                disabled={alpacaSyncing}
+                title="Switch Live Desk between real Alpaca IEX bars and simulated bars (orders always remain local paper)"
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-medium rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  feedMode === 'alpaca'
+                    ? 'bg-emerald-950/40 text-emerald-400 border-emerald-700/60 hover:bg-emerald-950/60'
+                    : 'bg-white text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                {alpacaSyncing
+                  ? 'Syncing...'
+                  : feedMode === 'alpaca'
+                    ? `Feed: Alpaca ${alpacaStatus.feed.toUpperCase()}`
+                    : 'Feed: Simulated'}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={advanceMarketBar}
+              disabled={alpacaSyncing}
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <StepForward className="w-3.5 h-3.5" />
-              Step Bar
+              {feedMode === 'alpaca' ? 'Sync Live' : 'Step Bar'}
             </button>
 
             <button
@@ -780,6 +954,18 @@ export function App() {
             </button>
           </div>
         </header>
+        {alpacaFeedError && (
+          <div className="bg-rose-950/40 border-b border-rose-800/60 px-6 py-2 text-xs text-rose-300 flex items-center justify-between">
+            <span>{alpacaFeedError}</span>
+            <button
+              type="button"
+              onClick={() => setAlpacaFeedError(null)}
+              className="underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto space-y-6">
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

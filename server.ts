@@ -136,6 +136,51 @@ async function startServer() {
     }
   });
 
+  async function fetchSymbolBars(
+    symbol: string,
+    limit: number,
+    cfg: ReturnType<typeof getAlpacaPaperConfig>
+  ) {
+    const startIso = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const url = `${DATA_BASE_URL}/v2/stocks/${encodeURIComponent(symbol)}/bars?timeframe=15Min&start=${encodeURIComponent(startIso)}&limit=${limit}&sort=desc&adjustment=split&feed=${cfg.feed}`;
+    const response = await fetch(url, {
+      headers: {
+        'APCA-API-KEY-ID': cfg.apiKey,
+        'APCA-API-SECRET-KEY': cfg.apiSecret,
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Alpaca market data error (${response.status}) for ${symbol}: ${text.slice(0, 160)}`);
+    }
+    const payload = (await response.json()) as {
+      bars?: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
+    };
+    const rawBars = (payload.bars ?? []).slice().reverse();
+    return rawBars.map((b, idx) => {
+      const d = new Date(b.t);
+      const parts = Object.fromEntries(
+        etFormatter.formatToParts(d).map((p) => [p.type, p.value])
+      );
+      const hhNum = Number(parts.hour === '24' ? '00' : parts.hour);
+      const minNum = Number(parts.minute);
+      const mins = hhNum * 60 + minNum;
+      const isRegularHours = mins >= 9 * 60 + 30 && mins < 16 * 60;
+      const hhStr = String(hhNum).padStart(2, '0');
+      const minStr = String(minNum).padStart(2, '0');
+      return {
+        index: idx,
+        timestamp: `${parts.month}-${parts.day} ${hhStr}:${minStr}`,
+        isRegularHours,
+        open: b.o,
+        high: b.h,
+        low: b.l,
+        close: b.c,
+        volume: b.v,
+      };
+    });
+  }
+
   app.get('/api/alpaca/bars', async (req, res) => {
     const cfg = getAlpacaPaperConfig();
     if (!cfg.isPaperUrl) {
@@ -156,51 +201,9 @@ async function startServer() {
     }
 
     const limit = Math.min(500, Math.max(60, Number(req.query.limit || 240)));
-    const startIso = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
 
     try {
-      const url = `${DATA_BASE_URL}/v2/stocks/${encodeURIComponent(rawSymbol)}/bars?timeframe=15Min&start=${encodeURIComponent(startIso)}&limit=${limit}&sort=desc&adjustment=split&feed=${cfg.feed}`;
-      const response = await fetch(url, {
-        headers: {
-          'APCA-API-KEY-ID': cfg.apiKey,
-          'APCA-API-SECRET-KEY': cfg.apiSecret,
-        },
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        return res.status(response.status).json({
-          error: `Alpaca market data error (${response.status}): ${text.slice(0, 200)}`,
-        });
-      }
-
-      const payload = (await response.json()) as {
-        bars?: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
-      };
-      const rawBars = (payload.bars ?? []).slice().reverse();
-      const bars = rawBars.map((b, idx) => {
-        const d = new Date(b.t);
-        const parts = Object.fromEntries(
-          etFormatter.formatToParts(d).map((p) => [p.type, p.value])
-        );
-        const hhNum = Number(parts.hour === '24' ? '00' : parts.hour);
-        const minNum = Number(parts.minute);
-        const mins = hhNum * 60 + minNum;
-        const isRegularHours = mins >= 9 * 60 + 30 && mins < 16 * 60;
-        const hhStr = String(hhNum).padStart(2, '0');
-        const minStr = String(minNum).padStart(2, '0');
-        return {
-          index: idx,
-          timestamp: `${parts.month}-${parts.day} ${hhStr}:${minStr}`,
-          isRegularHours,
-          open: b.o,
-          high: b.h,
-          low: b.l,
-          close: b.c,
-          volume: b.v,
-        };
-      });
-
+      const bars = await fetchSymbolBars(rawSymbol, limit, cfg);
       return res.json({
         symbol: rawSymbol,
         feed: cfg.feed,
@@ -210,6 +213,40 @@ async function startServer() {
     } catch (err) {
       return res.status(502).json({
         error: err instanceof Error ? err.message : 'Failed to fetch Alpaca market data.',
+      });
+    }
+  });
+
+  app.get('/api/alpaca/universe-bars', async (req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        error: 'Fail-closed guard: ALPACA_BASE_URL must be https://paper-api.alpaca.markets.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.status(503).json({
+        configured: false,
+        error: 'Alpaca paper API keys are not configured in server environment.',
+      });
+    }
+
+    const limit = Math.min(240, Math.max(60, Number(req.query.limit || 140)));
+
+    try {
+      const symbols = Array.from(ALLOWED_SYMBOLS);
+      const entries = await Promise.all(
+        symbols.map(async (sym) => [sym, await fetchSymbolBars(sym, limit, cfg)] as const)
+      );
+      const barsBySymbol = Object.fromEntries(entries);
+      return res.json({
+        feed: cfg.feed,
+        fetchedAt: new Date().toISOString(),
+        barsBySymbol,
+      });
+    } catch (err) {
+      return res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to fetch Alpaca universe bars.',
       });
     }
   });
