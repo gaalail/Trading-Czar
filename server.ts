@@ -8,6 +8,21 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = '0.0.0.0';
 
 const ALLOWED_SYMBOLS = new Set(['NVDA', 'AAPL', 'MSFT', 'SPY', 'QQQ', 'TSLA']);
+const MOVER_SYMBOL_REGEX = /^[A-Z]{1,5}$/;
+const FALLBACK_LIQUID_WATCHPOOL = [
+  'AMD',
+  'META',
+  'AMZN',
+  'GOOGL',
+  'AVGO',
+  'NFLX',
+  'PLTR',
+  'COIN',
+  'ARM',
+  'JPM',
+  'IWM',
+  'XLE',
+];
 const PAPER_BASE_URL = 'https://paper-api.alpaca.markets';
 const DATA_BASE_URL = 'https://data.alpaca.markets';
 const REGISTRY_PATH = path.join(__dirname, 'knowledge', 'experiments', 'registry.json');
@@ -217,6 +232,45 @@ async function startServer() {
     }
   });
 
+  app.get('/api/alpaca/discover-bars', async (req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        error: 'Fail-closed guard: ALPACA_BASE_URL must be https://paper-api.alpaca.markets.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.status(503).json({
+        configured: false,
+        error: 'Alpaca paper API keys are not configured in server environment.',
+      });
+    }
+
+    const rawSymbol = String(req.query.symbol || '').trim().toUpperCase();
+    if (!MOVER_SYMBOL_REGEX.test(rawSymbol)) {
+      return res.status(400).json({
+        error: 'Invalid ticker format. Only 1-5 letter US equity/ETF tickers are permitted.',
+      });
+    }
+
+    const limit = Math.min(240, Math.max(60, Number(req.query.limit || 140)));
+
+    try {
+      const bars = await fetchSymbolBars(rawSymbol, limit, cfg);
+      return res.json({
+        symbol: rawSymbol,
+        feed: cfg.feed,
+        readOnly: true,
+        fingerprint: `alpaca-discover-${cfg.feed}-${rawSymbol.toLowerCase()}-${bars.length}b`,
+        bars,
+      });
+    } catch (err) {
+      return res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to fetch discovered ticker bars.',
+      });
+    }
+  });
+
   app.get('/api/alpaca/universe-bars', async (req, res) => {
     const cfg = getAlpacaPaperConfig();
     if (!cfg.isPaperUrl) {
@@ -247,6 +301,174 @@ async function startServer() {
     } catch (err) {
       return res.status(502).json({
         error: err instanceof Error ? err.message : 'Failed to fetch Alpaca universe bars.',
+      });
+    }
+  });
+
+  app.get('/api/alpaca/movers', async (_req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        error: 'Fail-closed guard: ALPACA_BASE_URL must be https://paper-api.alpaca.markets.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.status(503).json({
+        configured: false,
+        error: 'Alpaca paper API keys are not configured in server environment.',
+      });
+    }
+
+    const headers = {
+      'APCA-API-KEY-ID': cfg.apiKey,
+      'APCA-API-SECRET-KEY': cfg.apiSecret,
+    };
+
+    try {
+      const [moversRes, activesRes] = await Promise.all([
+        fetch(`${DATA_BASE_URL}/v1beta1/screener/stocks/movers?top=20`, { headers }),
+        fetch(`${DATA_BASE_URL}/v1beta1/screener/stocks/most-actives?by=volume&top=20`, { headers }),
+      ]);
+
+      const sourceTags = new Map<string, Set<string>>();
+      const addSource = (sym: string, tag: string) => {
+        const clean = String(sym || '').trim().toUpperCase();
+        const isWarrantOrUnit = clean.length === 5 && /[WRU]$/.test(clean);
+        if (!MOVER_SYMBOL_REGEX.test(clean) || isWarrantOrUnit || ALLOWED_SYMBOLS.has(clean)) return;
+        const set = sourceTags.get(clean) ?? new Set<string>();
+        set.add(tag);
+        sourceTags.set(clean, set);
+      };
+
+      let screenerLiveCount = 0;
+
+      if (activesRes.ok) {
+        const activesData = (await activesRes.json()) as {
+          most_actives?: Array<{ symbol?: string }>;
+        };
+        for (const item of (activesData.most_actives ?? []).slice(0, 15)) {
+          if (item.symbol) {
+            addSource(item.symbol, 'Most Active');
+            screenerLiveCount++;
+          }
+        }
+      }
+
+      if (moversRes.ok) {
+        const moversData = (await moversRes.json()) as {
+          gainers?: Array<{ symbol?: string }>;
+          losers?: Array<{ symbol?: string }>;
+        };
+        for (const item of (moversData.gainers ?? []).slice(0, 12)) {
+          if (item.symbol) {
+            addSource(item.symbol, 'Top Gainer');
+            screenerLiveCount++;
+          }
+        }
+        for (const item of (moversData.losers ?? []).slice(0, 6)) {
+          if (item.symbol) {
+            addSource(item.symbol, 'Top Mover');
+            screenerLiveCount++;
+          }
+        }
+      }
+
+      // Always include liquid watchpool supplement if few candidates came back
+      if (sourceTags.size < 16) {
+        for (const sym of FALLBACK_LIQUID_WATCHPOOL) {
+          if (!sourceTags.has(sym)) {
+            addSource(sym, 'Watchpool Snapshot');
+          }
+        }
+      }
+
+      const candidateSymbols = Array.from(sourceTags.keys()).slice(0, 35);
+      if (candidateSymbols.length === 0) {
+        return res.json({
+          feed: cfg.feed,
+          sourceSummary: 'No external candidates returned',
+          fetchedAt: new Date().toISOString(),
+          movers: [],
+        });
+      }
+
+      const snapUrl = `${DATA_BASE_URL}/v2/stocks/snapshots?symbols=${encodeURIComponent(
+        candidateSymbols.join(',')
+      )}&feed=${cfg.feed}`;
+      const snapRes = await fetch(snapUrl, { headers });
+      if (!snapRes.ok) {
+        const text = await snapRes.text();
+        throw new Error(`Alpaca snapshots error (${snapRes.status}): ${text.slice(0, 160)}`);
+      }
+
+      const snapshots = (await snapRes.json()) as Record<
+        string,
+        {
+          latestTrade?: { p?: number };
+          dailyBar?: { o?: number; h?: number; l?: number; c?: number; v?: number };
+          prevDailyBar?: { c?: number; v?: number };
+        }
+      >;
+
+      const movers = candidateSymbols
+        .map((symbol) => {
+          const snap = snapshots[symbol];
+          if (!snap) return null;
+          const price = Number(snap.latestTrade?.p ?? snap.dailyBar?.c ?? 0);
+          const prevClose = Number(snap.prevDailyBar?.c ?? snap.dailyBar?.o ?? price);
+          const dailyHigh = Number(snap.dailyBar?.h ?? price);
+          const dailyLow = Number(snap.dailyBar?.l ?? price);
+          const volume = Number(snap.dailyBar?.v ?? 0);
+          const prevVolume = Number(snap.prevDailyBar?.v ?? 0);
+          if (!Number.isFinite(price) || price <= 0) return null;
+
+          const changePct = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+          const rangePct = price > 0 ? ((dailyHigh - dailyLow) / price) * 100 : 0;
+          const rvol = prevVolume > 0 ? volume / prevVolume : 1;
+          const dollarVolume = price * volume;
+
+          const tags = Array.from(sourceTags.get(symbol) ?? ['Snapshot']);
+          const sourceLabel = tags.join(' + ');
+
+          let passedLiquidityGate = true;
+          let filterReason = 'Meets price & volume liquidity standards';
+          if (price < 10) {
+            passedLiquidityGate = false;
+            filterReason = `Filtered: price $${price.toFixed(2)} below $10.00 minimum`;
+          } else if (volume < 500000 && dollarVolume < 10000000) {
+            passedLiquidityGate = false;
+            filterReason = `Filtered: daily volume ${(volume / 1000).toFixed(0)}k below 500k liquidity floor`;
+          }
+
+          return {
+            symbol,
+            price,
+            prevClose,
+            changePct,
+            volume,
+            prevVolume,
+            rvol,
+            rangePct,
+            dollarVolume,
+            sourceLabel,
+            passedLiquidityGate,
+            filterReason,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      return res.json({
+        feed: cfg.feed,
+        sourceSummary:
+          screenerLiveCount > 0
+            ? 'Alpaca Screener Movers + Most Actives + Snapshots'
+            : 'Alpaca Liquid Watchpool Snapshots (Market Closed / Holiday)',
+        fetchedAt: new Date().toISOString(),
+        movers,
+      });
+    } catch (err) {
+      return res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to scan market-wide movers.',
       });
     }
   });

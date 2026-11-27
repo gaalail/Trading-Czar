@@ -7,7 +7,6 @@ import type {
   StrategyConfig,
   StrategyId,
   StrategyWeights,
-  SymbolId,
 } from './types';
 
 export const DEFAULT_WEIGHTS: StrategyWeights = {
@@ -100,7 +99,7 @@ export function computeAtrScaledRiskGuards(
 }
 
 export function evaluateModel(
-  symbol: SymbolId,
+  symbol: string,
   candles: Candle[],
   config: StrategyConfig,
   weights: StrategyWeights,

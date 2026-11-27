@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { BacktestMatrixView } from './components/BacktestMatrixView';
+import { DiscoveryRadarPanel } from './components/DiscoveryRadarPanel';
 import { EquityChart } from './components/EquityChart';
 import { ExperimentRegistryView } from './components/ExperimentRegistryView';
 import { PriceChart } from './components/PriceChart';
@@ -30,6 +31,13 @@ import {
   SYMBOL_PROFILES,
 } from './engine/data/marketData';
 import { computeMarketBreadth } from './engine/intelligence/breadth';
+import {
+  buildSimulatedDiscoveredBars,
+  buildSimulatedDiscoverySnapshots,
+  rankDiscoveryMovers,
+  type ExternalMoverSnapshot,
+  type RankedDiscoveryMover,
+} from './engine/intelligence/discovery';
 import { enrichMarketIntelligence } from './engine/intelligence/indicators';
 import { rankMarketOpportunities } from './engine/intelligence/scanner';
 import {
@@ -175,10 +183,111 @@ export function App() {
   const [feedMode, setFeedMode] = useState<'simulated' | 'alpaca'>('simulated');
   const [alpacaSyncing, setAlpacaSyncing] = useState(false);
   const [alpacaFeedError, setAlpacaFeedError] = useState<string | null>(null);
+  const [discoveryMovers, setDiscoveryMovers] = useState<RankedDiscoveryMover[]>(() =>
+    rankDiscoveryMovers(buildSimulatedDiscoverySnapshots(101))
+  );
+  const [discoverySourceSummary, setDiscoverySourceSummary] = useState(
+    'Simulated Liquid Watchpool (10 External US Equities & ETFs)'
+  );
+  const [discoveryFetchedAt, setDiscoveryFetchedAt] = useState<string | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [inspectedTicker, setInspectedTicker] = useState<{
+    symbol: string;
+    sourceLabel: string;
+    candles: Candle[];
+  } | null>(null);
+  const [inspectingLoading, setInspectingLoading] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  const scanMarketMovers = useCallback(
+    async (modeOverride?: 'simulated' | 'alpaca', alpacaConfiguredOverride?: boolean) => {
+      const targetMode = modeOverride ?? feedMode;
+      const canUseAlpaca = alpacaConfiguredOverride ?? alpacaStatus.configured;
+      setDiscoveryLoading(true);
+      setDiscoveryError(null);
+
+      if (targetMode !== 'alpaca' || !canUseAlpaca) {
+        const simMovers = rankDiscoveryMovers(
+          buildSimulatedDiscoverySnapshots(resetSalt + Math.floor(Date.now() / 10000))
+        );
+        setDiscoveryMovers(simMovers);
+        setDiscoverySourceSummary('Simulated Liquid Watchpool (10 External US Equities & ETFs)');
+        setDiscoveryFetchedAt(new Date().toISOString());
+        setDiscoveryLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/alpaca/movers');
+        const payload = (await res.json()) as {
+          movers?: ExternalMoverSnapshot[];
+          sourceSummary?: string;
+          fetchedAt?: string;
+          error?: string;
+        };
+        if (!res.ok || !Array.isArray(payload.movers)) {
+          throw new Error(payload.error || 'Failed to scan Alpaca market movers.');
+        }
+        setDiscoveryMovers(rankDiscoveryMovers(payload.movers));
+        setDiscoverySourceSummary(
+          payload.sourceSummary || 'Alpaca Screener Movers + Most Actives + Snapshots'
+        );
+        setDiscoveryFetchedAt(payload.fetchedAt || new Date().toISOString());
+      } catch (err) {
+        setDiscoveryError(err instanceof Error ? err.message : 'Unable to scan market movers.');
+      } finally {
+        setDiscoveryLoading(false);
+      }
+    },
+    [feedMode, alpacaStatus.configured, resetSalt]
+  );
+
+  const handleInspectDiscoveredTicker = useCallback(
+    async (mover: RankedDiscoveryMover) => {
+      setInspectingLoading(true);
+      setDiscoveryError(null);
+      try {
+        if (feedMode === 'alpaca' && alpacaStatus.configured) {
+          const res = await fetch(
+            `/api/alpaca/discover-bars?symbol=${encodeURIComponent(mover.symbol)}&limit=140`
+          );
+          const payload = (await res.json()) as {
+            bars?: RawCandle[];
+            error?: string;
+          };
+          if (!res.ok || !Array.isArray(payload.bars) || payload.bars.length < 20) {
+            throw new Error(
+              payload.error || `Not enough 15m bars available to chart ${mover.symbol}.`
+            );
+          }
+          setInspectedTicker({
+            symbol: mover.symbol,
+            sourceLabel: mover.sourceLabel,
+            candles: enrichMarketIntelligence(payload.bars),
+          });
+        } else {
+          const raw = buildSimulatedDiscoveredBars(mover.symbol, 120);
+          setInspectedTicker({
+            symbol: mover.symbol,
+            sourceLabel: mover.sourceLabel,
+            candles: enrichMarketIntelligence(raw),
+          });
+        }
+        setActiveTab('desk');
+      } catch (err) {
+        setDiscoveryError(
+          err instanceof Error ? err.message : `Unable to load chart bars for ${mover.symbol}.`
+        );
+      } finally {
+        setInspectingLoading(false);
+      }
+    },
+    [feedMode, alpacaStatus.configured]
+  );
 
   const syncAlpacaLiveWorkspace = useCallback(
     async (resetSleeves: boolean, forceStep: boolean): Promise<boolean> => {
@@ -318,6 +427,7 @@ export function App() {
               const ok = await syncAlpacaLiveWorkspace(true, false);
               if (active && ok) {
                 setFeedMode('alpaca');
+                void scanMarketMovers('alpaca', true);
               }
             }
             return;
@@ -443,16 +553,21 @@ export function App() {
 
   const handleToggleFeedMode = useCallback(() => {
     setIsRunning(false);
+    setInspectedTicker(null);
     if (feedMode === 'simulated') {
       void syncAlpacaLiveWorkspace(true, false).then((ok) => {
-        if (ok) setFeedMode('alpaca');
+        if (ok) {
+          setFeedMode('alpaca');
+          void scanMarketMovers('alpaca', true);
+        }
       });
     } else {
       setFeedMode('simulated');
       setAlpacaFeedError(null);
       setWorkspace(createWorkspace(strategyConfigs, riskLimits, 18, resetSalt));
+      void scanMarketMovers('simulated', false);
     }
-  }, [feedMode, syncAlpacaLiveWorkspace, strategyConfigs, riskLimits, resetSalt]);
+  }, [feedMode, syncAlpacaLiveWorkspace, scanMarketMovers, strategyConfigs, riskLimits, resetSalt]);
 
   const handleManualOrder = (side: 'BUY' | 'SELL', targetSymbol: SymbolId = activeSymbol) => {
     setWorkspace((prev) => {
@@ -589,11 +704,22 @@ export function App() {
 
   const activeCandles = workspace.candlesBySymbol[activeSymbol];
   const latestCandle = activeCandles[activeCandles.length - 1];
-  const prevCandle = activeCandles[Math.max(0, activeCandles.length - 2)];
-  const priceChange = latestCandle.close - prevCandle.close;
-  const priceChangePct = (priceChange / prevCandle.close) * 100;
   const activeDecision = workspace.decisionsByStrategy[activeStrategyId][activeSymbol];
   const activePosition = activePortfolio.positions[activeSymbol];
+
+  const isInspectingExternal = inspectedTicker !== null;
+  const displayedSymbol = inspectedTicker ? inspectedTicker.symbol : activeSymbol;
+  const displayedTitle = inspectedTicker
+    ? `${inspectedTicker.symbol} · ${inspectedTicker.sourceLabel}`
+    : `${activeSymbol} · ${SYMBOL_PROFILES[activeSymbol].name}`;
+  const displayedAssetClass = inspectedTicker
+    ? 'Discovery Inspection (Read-Only)'
+    : SYMBOL_PROFILES[activeSymbol].assetClass;
+  const displayedCandles = inspectedTicker ? inspectedTicker.candles : activeCandles;
+  const displayedLatestCandle = displayedCandles[displayedCandles.length - 1];
+  const displayedPrevCandle = displayedCandles[Math.max(0, displayedCandles.length - 2)];
+  const priceChange = displayedLatestCandle.close - displayedPrevCandle.close;
+  const priceChangePct = (priceChange / Math.max(0.01, displayedPrevCandle.close)) * 100;
 
   const sleeveSummaries = useMemo(() => {
     return STRATEGY_LIST.map((strat) => {
@@ -681,6 +807,19 @@ export function App() {
     () => computeMarketBreadth(workspace.candlesBySymbol, activeSymbol),
     [workspace.candlesBySymbol, activeSymbol]
   );
+
+  const displayedDecision = useMemo(() => {
+    if (!inspectedTicker) return activeDecision;
+    return evaluateModel(
+      inspectedTicker.symbol,
+      inspectedTicker.candles,
+      currentStrategyConfig,
+      activePortfolio.weights,
+      false,
+      0,
+      breadth
+    );
+  }, [inspectedTicker, activeDecision, currentStrategyConfig, activePortfolio.weights, breadth]);
 
   const opportunities = useMemo(
     () =>
@@ -778,6 +917,7 @@ export function App() {
                 key={profile.id}
                 type="button"
                 onClick={() => {
+                  setInspectedTicker(null);
                   setActiveSymbol(profile.id);
                   setActiveTab('desk');
                   setMobileMenuOpen(false);
@@ -883,7 +1023,7 @@ export function App() {
                 <>
                   <span aria-hidden="true">/</span>
                   <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
-                    {activeSymbol}
+                    {displayedSymbol}
                   </span>
                 </>
               )}
@@ -1122,19 +1262,28 @@ export function App() {
                 <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col">
                   <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b border-slate-200 dark:border-slate-800">
                     <div>
-                      <div className="flex items-baseline gap-3">
+                      <div className="flex flex-wrap items-baseline gap-3">
                         <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                          {activeSymbol} · {SYMBOL_PROFILES[activeSymbol].name}
+                          {displayedTitle}
                         </h1>
                         <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {SYMBOL_PROFILES[activeSymbol].assetClass} ·{' '}
-                          {latestCandle.isRegularHours ? 'Regular Session' : 'Extended Session'} ·{' '}
-                          {latestCandle.sessionWindow}
+                          {displayedAssetClass} ·{' '}
+                          {displayedLatestCandle.isRegularHours ? 'Regular Session' : 'Extended Session'} ·{' '}
+                          {displayedLatestCandle.sessionWindow}
                         </span>
+                        {isInspectingExternal && (
+                          <button
+                            type="button"
+                            onClick={() => setInspectedTicker(null)}
+                            className="text-xs font-medium text-slate-700 dark:text-slate-200 underline underline-offset-4 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                          >
+                            Return to {activeSymbol}
+                          </button>
+                        )}
                       </div>
                       <div className="mt-1 flex items-center gap-3 font-mono text-sm">
                         <span className="font-semibold text-slate-900 dark:text-slate-100">
-                          ${latestCandle.close.toFixed(2)}
+                          ${displayedLatestCandle.close.toFixed(2)}
                         </span>
                         <span
                           className={
@@ -1187,9 +1336,9 @@ export function App() {
                   </div>
 
                   <PriceChart
-                    candles={activeCandles}
-                    trades={activePortfolio.trades}
-                    symbol={activeSymbol}
+                    candles={displayedCandles}
+                    trades={isInspectingExternal ? [] : activePortfolio.trades}
+                    symbol={displayedSymbol}
                   />
                   <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
@@ -1233,27 +1382,27 @@ export function App() {
                       </div>
                       <div
                         className={`font-mono text-xs font-semibold ${
-                          activeDecision.action === 'BUY'
+                          displayedDecision.action === 'BUY'
                             ? 'text-emerald-600 dark:text-emerald-400'
-                            : activeDecision.action === 'SELL'
+                            : displayedDecision.action === 'SELL'
                               ? 'text-rose-600 dark:text-rose-400'
                               : 'text-slate-600 dark:text-slate-300'
                         }`}
                       >
-                        {activeDecision.action} · {(activeDecision.confidence * 100).toFixed(0)}%
+                        {displayedDecision.action} · {(displayedDecision.confidence * 100).toFixed(0)}%
                       </div>
                     </div>
 
                     <div className="p-5 space-y-4">
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                        {activeDecision.rationale}
+                        {displayedDecision.rationale}
                       </p>
 
                       <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
                           Feature Signal Breakdown
                         </div>
-                        {activeDecision.contributions.map((feat) => (
+                        {displayedDecision.contributions.map((feat) => (
                           <div
                             key={feat.label}
                             className="flex items-center justify-between text-xs"
@@ -1283,34 +1432,56 @@ export function App() {
                   </div>
 
                   <div className="p-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 dark:text-slate-400">
-                        Current {activeSymbol} Holding
-                      </span>
-                      <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
-                        {activePosition.quantity > 0
-                          ? `${activePosition.quantity} @ $${activePosition.avgEntryPrice.toFixed(2)}`
-                          : 'Flat (0 shares)'}
-                      </span>
-                    </div>
+                    {isInspectingExternal ? (
+                      <>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">
+                            Sleeve Execution Status
+                          </span>
+                          <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
+                            Read-Only Preview ({displayedSymbol})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setInspectedTicker(null)}
+                          className="w-full px-4 py-2 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          Return to Core Sleeve ({activeSymbol})
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">
+                            Current {activeSymbol} Holding
+                          </span>
+                          <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
+                            {activePosition.quantity > 0
+                              ? `${activePosition.quantity} @ $${activePosition.avgEntryPrice.toFixed(2)}`
+                              : 'Flat (0 shares)'}
+                          </span>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleManualOrder('BUY', activeSymbol)}
-                        className="px-4 py-2 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
-                      >
-                        Manual Buy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleManualOrder('SELL', activeSymbol)}
-                        disabled={activePosition.quantity <= 0}
-                        className="px-4 py-2 text-xs font-semibold rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                      >
-                        Close Position
-                      </button>
-                    </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleManualOrder('BUY', activeSymbol)}
+                            className="px-4 py-2 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+                          >
+                            Manual Buy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleManualOrder('SELL', activeSymbol)}
+                            disabled={activePosition.quantity <= 0}
+                            className="px-4 py-2 text-xs font-semibold rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                          >
+                            Close Position
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </section>
@@ -1442,11 +1613,14 @@ export function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70 text-xs">
                       {opportunities.map((row) => {
-                        const isSelected = row.symbol === activeSymbol;
+                        const isSelected = !isInspectingExternal && row.symbol === activeSymbol;
                         return (
                           <tr
                             key={row.symbol}
-                            onClick={() => setActiveSymbol(row.symbol)}
+                            onClick={() => {
+                              setInspectedTicker(null);
+                              setActiveSymbol(row.symbol);
+                            }}
                             className={`cursor-pointer transition-colors ${
                               isSelected
                                 ? 'bg-slate-100/90 dark:bg-slate-800/70'
@@ -1497,6 +1671,18 @@ export function App() {
                   </table>
                 </div>
               </section>
+
+              <DiscoveryRadarPanel
+                movers={discoveryMovers}
+                sourceSummary={discoverySourceSummary}
+                fetchedAt={discoveryFetchedAt}
+                loading={discoveryLoading}
+                error={discoveryError}
+                inspectedSymbol={inspectedTicker?.symbol ?? null}
+                inspectingLoading={inspectingLoading}
+                onRefresh={() => void scanMarketMovers()}
+                onInspectTicker={(mover) => void handleInspectDiscoveredTicker(mover)}
+              />
             </>
           )}
 

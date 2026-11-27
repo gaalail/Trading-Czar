@@ -6,6 +6,11 @@ import {
   SYMBOL_LIST,
 } from '../src/engine/data/marketData';
 import { computeMarketBreadth } from '../src/engine/intelligence/breadth';
+import {
+  buildSimulatedDiscoveredBars,
+  buildSimulatedDiscoverySnapshots,
+  rankDiscoveryMovers,
+} from '../src/engine/intelligence/discovery';
 import { enrichMarketIntelligence } from '../src/engine/intelligence/indicators';
 import { rankMarketOpportunities } from '../src/engine/intelligence/scanner';
 import {
@@ -231,5 +236,41 @@ describe('Layer Separation & Research Integrity', () => {
     for (let i = 1; i < ranked.length; i++) {
       expect(ranked[i - 1].opportunityScore).toBeGreaterThanOrEqual(ranked[i].opportunityScore);
     }
+  });
+
+  it('Market-Wide Discovery Radar prioritizes liquidity-passing movers and supports read-only inspection', () => {
+    const snapshots = buildSimulatedDiscoverySnapshots(202);
+    snapshots.push({
+      symbol: 'PENNY',
+      price: 3.4,
+      prevClose: 2.1,
+      changePct: 61.9,
+      volume: 150000,
+      prevVolume: 50000,
+      rvol: 3.0,
+      rangePct: 18.5,
+      dollarVolume: 510000,
+      sourceLabel: 'Top Gainer',
+      passedLiquidityGate: false,
+      filterReason: 'Filtered: price $3.40 below $10.00 minimum',
+    });
+
+    const ranked = rankDiscoveryMovers(snapshots);
+    expect(ranked[0].passedLiquidityGate).toBe(true);
+    expect(ranked[ranked.length - 1].symbol).toBe('PENNY');
+    expect(ranked[ranked.length - 1].passedLiquidityGate).toBe(false);
+
+    const bars = buildSimulatedDiscoveredBars('AMD', 90);
+    const enriched = enrichMarketIntelligence(bars);
+    const previewDecision = evaluateModel(
+      'AMD',
+      enriched,
+      STRATEGIES['neural-perceptron'],
+      DEFAULT_WEIGHTS,
+      false,
+      0
+    );
+    expect(previewDecision.symbol).toBe('AMD');
+    expect(['BUY', 'SELL', 'HOLD']).toContain(previewDecision.action);
   });
 });

@@ -78,7 +78,7 @@ export interface FeatureContribution {
 }
 
 export interface ModelDecision {
-  symbol: SymbolId;
+  symbol: string;
   candleIndex: number;
   timestamp: string;
   action: SignalAction;
