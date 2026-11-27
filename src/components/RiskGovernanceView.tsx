@@ -153,6 +153,56 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
               </button>
             </div>
 
+            <div className="flex items-center justify-between gap-4 py-1">
+              <div>
+                <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Pre-Close EOD Flatten Guard
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Blocks new buys after 15:40 ET and flattens open longs at 15:45 ET to prevent overnight gap risk
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateLimits({ flattenBeforeClose: !limits.flattenBeforeClose })
+                }
+                className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap cursor-pointer ${
+                  limits.flattenBeforeClose
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                }`}
+              >
+                {limits.flattenBeforeClose ? 'Enabled' : 'Off'}
+              </button>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs mb-2">
+                <label htmlFor="stale-cap" className="font-medium text-slate-700 dark:text-slate-300">
+                  Live Feed Stale-Bar Guard
+                </label>
+                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">
+                  {limits.maxBarAgeMinutes} min
+                </span>
+              </div>
+              <input
+                id="stale-cap"
+                type="range"
+                min={15}
+                max={120}
+                step={5}
+                value={limits.maxBarAgeMinutes}
+                onChange={(e) =>
+                  onUpdateLimits({ maxBarAgeMinutes: Number(e.target.value) })
+                }
+                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+              />
+              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                Blocks new live buys if Alpaca&apos;s newest bar timestamp lags behind wall clock beyond limit
+              </div>
+            </div>
+
             <div>
               <div className="flex items-center justify-between text-xs mb-2">
                 <label htmlFor="exp-cap" className="font-medium text-slate-700 dark:text-slate-300">
@@ -197,6 +247,32 @@ export const RiskGovernanceView: React.FC<RiskGovernanceViewProps> = ({
                 }
                 className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
               />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs mb-2">
+                <label htmlFor="corr-cap" className="font-medium text-slate-700 dark:text-slate-300">
+                  Max Correlated SPY-Beta Cluster
+                </label>
+                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">
+                  {(limits.maxCorrelatedExposurePct * 100).toFixed(0)}%
+                </span>
+              </div>
+              <input
+                id="corr-cap"
+                type="range"
+                min={25}
+                max={85}
+                step={5}
+                value={Math.round(limits.maxCorrelatedExposurePct * 100)}
+                onChange={(e) =>
+                  onUpdateLimits({ maxCorrelatedExposurePct: Number(e.target.value) / 100 })
+                }
+                className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
+              />
+              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                Caps combined exposure across stocks with &ge; 0.65 rolling correlation to SPY
+              </div>
             </div>
 
             <div>

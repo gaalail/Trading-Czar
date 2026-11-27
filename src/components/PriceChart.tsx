@@ -11,6 +11,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [showEma, setShowEma] = useState(true);
   const [showBands, setShowBands] = useState(true);
+  const [showVwap, setShowVwap] = useState(true);
 
   const visibleCandles = useMemo(() => candles.slice(-64), [candles]);
 
@@ -42,11 +43,15 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
         if (c.bbLower20 < min) min = c.bbLower20;
         if (c.bbUpper20 > max) max = c.bbUpper20;
       }
+      if (showVwap && Number.isFinite(c.vwap)) {
+        if (c.vwap < min) min = c.vwap;
+        if (c.vwap > max) max = c.vwap;
+      }
       if (c.volume > mVol) mVol = c.volume;
     }
     const pad = (max - min) * 0.08 || 1;
     return { minPrice: min - pad, maxPrice: max + pad, maxVol: mVol };
-  }, [visibleCandles, showEma, showBands]);
+  }, [visibleCandles, showEma, showBands, showVwap]);
 
   const width = 920;
   const height = 340;
@@ -77,6 +82,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
 
   const ema9Path = useMemo(() => buildLinePath((c) => c.ema9), [visibleCandles, stepX, minPrice, maxPrice]);
   const ema21Path = useMemo(() => buildLinePath((c) => c.ema21), [visibleCandles, stepX, minPrice, maxPrice]);
+  const vwapPath = useMemo(() => buildLinePath((c) => c.vwap), [visibleCandles, stepX, minPrice, maxPrice]);
   const bbUpperPath = useMemo(() => buildLinePath((c) => c.bbUpper20), [visibleCandles, stepX, minPrice, maxPrice]);
   const bbLowerPath = useMemo(() => buildLinePath((c) => c.bbLower20), [visibleCandles, stepX, minPrice, maxPrice]);
 
@@ -127,10 +133,26 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
           <span aria-hidden="true">·</span>
           <span className="font-mono">RSI {activeCandle.rsi14.toFixed(1)}</span>
           <span aria-hidden="true">·</span>
+          <span className="font-mono">VWAP {activeCandle.vwap.toFixed(2)}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">ADX {activeCandle.adx14.toFixed(1)}</span>
+          <span aria-hidden="true">·</span>
           <span>{activeCandle.regime}</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowVwap((v) => !v)}
+            className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              showVwap
+                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800 dark:hover:text-slate-100'
+            }`}
+          >
+            {showVwap ? 'VWAP On' : 'VWAP Off'}
+          </button>
+
           <button
             type="button"
             onClick={() => setShowBands((v) => !v)}
@@ -242,6 +264,16 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
                 strokeWidth={1.5}
               />
             </>
+          )}
+
+          {showVwap && vwapPath && (
+            <path
+              d={vwapPath}
+              fill="none"
+              className="stroke-teal-600 dark:stroke-teal-400"
+              strokeDasharray="5 3"
+              strokeWidth={1.5}
+            />
           )}
 
           {visibleCandles.map((c, idx) => {

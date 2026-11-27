@@ -4,13 +4,28 @@ export const DEFAULT_RISK_LIMITS: RiskLimits = {
   executionMode: 'PAPER_ONLY',
   maxPortfolioExposurePct: 0.85,
   maxSinglePositionPct: 0.35,
+  maxCorrelatedExposurePct: 0.55,
   maxOrderNotional: 35000,
   maxBarVolumePct: 0.05,
   enforceMarketHours: true,
+  flattenBeforeClose: true,
+  maxBarAgeMinutes: 45,
   allowShortSelling: false,
   allowMargin: false,
   halted: false,
 };
+
+export function getEtMinutesFromTimestamp(timestamp: string): number | null {
+  const match = timestamp.match(/(\d{2}):(\d{2})/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+export function isPreCloseFlattenWindow(candle: Candle): boolean {
+  if (!candle.isRegularHours) return false;
+  const mins = getEtMinutesFromTimestamp(candle.timestamp);
+  return mins !== null && mins >= 15 * 60 + 45 && mins < 16 * 60;
+}
 
 export interface RiskCheckResult {
   approved: boolean;
@@ -28,8 +43,24 @@ export function evaluateRiskGate(params: {
   totalEquity: number;
   limits: RiskLimits;
   latestCandle: Candle;
+  symbolCorrToSpy?: number;
+  correlatedOpenValue?: number;
+  nowMs?: number;
 }): RiskCheckResult {
-  const { portfolio, symbol, side, quantity, price, fee, totalEquity, limits, latestCandle } = params;
+  const {
+    portfolio,
+    symbol,
+    side,
+    quantity,
+    price,
+    fee,
+    totalEquity,
+    limits,
+    latestCandle,
+    symbolCorrToSpy = 0,
+    correlatedOpenValue = 0,
+    nowMs = Date.now(),
+  } = params;
 
   if (limits.executionMode !== 'PAPER_ONLY') {
     return {
@@ -47,12 +78,31 @@ export function evaluateRiskGate(params: {
     };
   }
 
-  if (!Number.isFinite(latestCandle.close) || latestCandle.close <= 0) {
+  if (
+    !Number.isFinite(latestCandle.close) ||
+    latestCandle.close <= 0 ||
+    latestCandle.high < latestCandle.low
+  ) {
     return {
       approved: false,
       rule: 'STALE_OR_INVALID_DATA',
       detail: `Order rejected: invalid market bar for ${symbol}.`,
     };
+  }
+
+  if (
+    side === 'BUY' &&
+    limits.maxBarAgeMinutes > 0 &&
+    typeof latestCandle.barEpochMs === 'number'
+  ) {
+    const ageMinutes = (nowMs - latestCandle.barEpochMs) / 60000;
+    if (ageMinutes > limits.maxBarAgeMinutes) {
+      return {
+        approved: false,
+        rule: 'STALE_OR_INVALID_DATA',
+        detail: `Order rejected: latest ${symbol} bar is ${Math.round(ageMinutes)}m old (stale-data limit ${limits.maxBarAgeMinutes}m).`,
+      };
+    }
   }
 
   if (limits.enforceMarketHours && !latestCandle.isRegularHours) {
@@ -61,6 +111,17 @@ export function evaluateRiskGate(params: {
       rule: 'OUTSIDE_REGULAR_MARKET_HOURS',
       detail: `Order rejected at ${latestCandle.timestamp} ET: regular US session (09:30-16:00 ET) enforcement active.`,
     };
+  }
+
+  if (limits.flattenBeforeClose && side === 'BUY') {
+    const mins = getEtMinutesFromTimestamp(latestCandle.timestamp);
+    if (mins !== null && mins >= 15 * 60 + 40 && mins < 16 * 60) {
+      return {
+        approved: false,
+        rule: 'PRE_CLOSE_ENTRY_CUTOFF',
+        detail: `Order rejected at ${latestCandle.timestamp} ET: pre-close flatten guard blocks new entries from 15:40 ET onward.`,
+      };
+    }
   }
 
   if (quantity <= 0) {
@@ -131,6 +192,17 @@ export function evaluateRiskGate(params: {
       rule: 'MAX_PORTFOLIO_EXPOSURE',
       detail: `Gross invested exposure would reach ${(projectedExposure * 100).toFixed(1)}% (limit ${(limits.maxPortfolioExposurePct * 100).toFixed(0)}%).`,
     };
+  }
+
+  if (symbolCorrToSpy >= 0.65 && totalEquity > 0) {
+    const projectedCorrelatedPct = (correlatedOpenValue + notional) / totalEquity;
+    if (projectedCorrelatedPct > limits.maxCorrelatedExposurePct) {
+      return {
+        approved: false,
+        rule: 'CORRELATION_CONCENTRATION_CAP',
+        detail: `High-SPY-beta cluster (${symbol} corr +${symbolCorrToSpy.toFixed(2)}) would reach ${(projectedCorrelatedPct * 100).toFixed(1)}% of equity (limit ${(limits.maxCorrelatedExposurePct * 100).toFixed(0)}%).`,
+      };
+    }
   }
 
   return {

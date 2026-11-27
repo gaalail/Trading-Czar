@@ -108,3 +108,34 @@ export function computeMarketBreadthAtBar(
   }
   return computeMarketBreadth(sliced, activeSymbol);
 }
+
+/**
+ * Pure Cross-Asset Correlation Matrix to SPY (causal prefix up to barIndex if specified).
+ * Never inspects portfolio positions; used downstream by Risk Gateway / Portfolio layer.
+ */
+export function computeUniverseSpyCorrelations(
+  candlesBySymbol: Record<SymbolId, Candle[]>,
+  barIndex?: number
+): Record<SymbolId, number> {
+  const spySeriesRaw = candlesBySymbol.SPY ?? [];
+  const spySeries =
+    typeof barIndex === 'number'
+      ? spySeriesRaw.slice(0, Math.max(1, Math.min(spySeriesRaw.length, barIndex + 1)))
+      : spySeriesRaw;
+  const spyRets = returnsFromCandles(spySeries);
+
+  const result = {} as Record<SymbolId, number>;
+  for (const key of Object.keys(candlesBySymbol) as SymbolId[]) {
+    if (key === 'SPY') {
+      result[key] = 1;
+      continue;
+    }
+    const raw = candlesBySymbol[key] ?? [];
+    const series =
+      typeof barIndex === 'number'
+        ? raw.slice(0, Math.max(1, Math.min(raw.length, barIndex + 1)))
+        : raw;
+    result[key] = pearsonCorrelation(returnsFromCandles(series), spyRets);
+  }
+  return result;
+}

@@ -18,11 +18,14 @@ import {
   computeTotalEquity,
   createInitialPortfolio,
   markToMarketAndRecord,
+  runDiscoveredSymbolWalkForward,
+  runPortfolioWalkForward,
   runWalkForwardMatrix,
   stepAISignals,
 } from '../src/engine/portfolio';
 import { DEFAULT_RISK_LIMITS } from '../src/engine/risk';
 import {
+  adaptPerceptronWeights,
   computeAtrScaledRiskGuards,
   DEFAULT_WEIGHTS,
   evaluateModel,
@@ -56,6 +59,12 @@ describe('Layer Separation & Research Integrity', () => {
     expect(barPrefix.bbMiddle20).toBeCloseTo(barFull.bbMiddle20, 10);
     expect(barPrefix.bbUpper20).toBeCloseTo(barFull.bbUpper20, 10);
     expect(barPrefix.bbLower20).toBeCloseTo(barFull.bbLower20, 10);
+    expect(barPrefix.vwap).toBeCloseTo(barFull.vwap, 10);
+    expect(barPrefix.adx14).toBeCloseTo(barFull.adx14, 10);
+    expect(barPrefix.plusDi14).toBeCloseTo(barFull.plusDi14, 10);
+    expect(barPrefix.minusDi14).toBeCloseTo(barFull.minusDi14, 10);
+    expect(barFull.adx14).toBeGreaterThanOrEqual(0);
+    expect(barFull.adx14).toBeLessThanOrEqual(100);
     expect(barFull.bbLower20).toBeLessThanOrEqual(barFull.bbMiddle20);
     expect(barFull.bbMiddle20).toBeLessThanOrEqual(barFull.bbUpper20);
     expect(barPrefix.regime).toBe(barFull.regime);
@@ -272,5 +281,70 @@ describe('Layer Separation & Research Integrity', () => {
     );
     expect(previewDecision.symbol).toBe('AMD');
     expect(['BUY', 'SELL', 'HOLD']).toContain(previewDecision.action);
+
+    const wfoCheck = runDiscoveredSymbolWalkForward('AMD', enriched, STRATEGIES['neural-perceptron']);
+    expect(wfoCheck.symbol).toBe('AMD');
+    expect(wfoCheck.datasetFingerprint).toBe('discover-15m-amd-90b');
+    expect(wfoCheck.validationFlags.length).toBeGreaterThan(0);
+  });
+
+  it('Entry-snapshot credit assignment updates weights from entry features and portfolio WFO enforces shared pool contention', () => {
+    const updatedWeights = adaptPerceptronWeights(
+      DEFAULT_WEIGHTS,
+      { emaSpread: 1.5, rsiCentered: -0.4, macdNorm: 1.2, zScore20: -0.8, volAligned: 0.9 },
+      450,
+      0.1
+    );
+    expect(updatedWeights.emaCross).toBeGreaterThan(DEFAULT_WEIGHTS.emaCross);
+    expect(updatedWeights.macd).toBeGreaterThan(DEFAULT_WEIGHTS.macd);
+
+    const portfolioWfo = runPortfolioWalkForward(100000, 180, 65, 5);
+    expect(portfolioWfo).toHaveLength(3);
+    for (const summary of portfolioWfo) {
+      expect(Number.isFinite(summary.outOfSampleSharpe)).toBe(true);
+      expect(Number.isFinite(summary.outOfSampleSortino)).toBe(true);
+      expect(summary.validationFlags.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('Session VWAP anchor, ADX(14) gate, and 15:45 ET pre-close flatten execute deterministically', () => {
+    const market = {} as Record<SymbolId, Candle[]>;
+    for (const profile of SYMBOL_LIST) {
+      const { rawCandles } = generateRawSeries(profile.id, 64, 707);
+      market[profile.id] = enrichMarketIntelligence(rawCandles);
+    }
+
+    const decision = evaluateModel(
+      'NVDA',
+      market.NVDA,
+      STRATEGIES['neural-perceptron'],
+      DEFAULT_WEIGHTS,
+      false,
+      0
+    );
+    expect(decision.contributions.some((c) => c.label === 'Session VWAP Anchor')).toBe(true);
+    expect(decision.contributions.some((c) => c.label === 'ADX(14) Trend Gate')).toBe(true);
+
+    // Verify 15:45 ET bar triggers pre-close flatten exit on held position
+    let portfolio = createInitialPortfolio('neural-perceptron', 100000, market);
+    portfolio.positions.NVDA.quantity = 25;
+    portfolio.positions.NVDA.avgEntryPrice = market.NVDA[market.NVDA.length - 1].close;
+    const lateNvda = {
+      ...market.NVDA[market.NVDA.length - 1],
+      timestamp: '11-27 15:45',
+      isRegularHours: true,
+    };
+    market.NVDA = [...market.NVDA.slice(0, -1), lateNvda];
+
+    const stepped = stepAISignals(
+      portfolio,
+      market,
+      STRATEGIES['neural-perceptron'],
+      true,
+      { ...DEFAULT_RISK_LIMITS, flattenBeforeClose: true }
+    );
+    expect(stepped.decisions.NVDA.action).toBe('SELL');
+    expect(stepped.decisions.NVDA.rationale).toContain('Pre-close flatten');
+    expect(stepped.portfolio.positions.NVDA.quantity).toBe(0);
   });
 });

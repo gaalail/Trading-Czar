@@ -16,18 +16,24 @@ function classifySessionWindow(timestamp: string, isRegularHours: boolean): Sess
   return 'Extended';
 }
 
+function extractSessionDateKey(timestamp: string): string {
+  const token = timestamp.trim().split(/[\sT]+/)[0];
+  return token || 'session';
+}
+
 function classifyRegime(
   emaSpreadPct: number,
   atrPct: number,
-  zScore20: number
+  zScore20: number,
+  adx14: number
 ): MarketRegime {
   if (atrPct >= 0.018) {
     return 'High Volatility';
   }
-  if (Math.abs(emaSpreadPct) >= 0.45) {
+  if ((adx14 >= 24 && Math.abs(emaSpreadPct) >= 0.3) || Math.abs(emaSpreadPct) >= 0.45) {
     return 'Trend Up';
   }
-  if (Math.abs(zScore20) >= 1.1) {
+  if ((adx14 < 20 && Math.abs(zScore20) >= 1.0) || Math.abs(zScore20) >= 1.1) {
     return 'Mean Reverting';
   }
   return 'Consolidation';
@@ -51,21 +57,54 @@ export function enrichMarketIntelligence(rawCandles: RawCandle[]): Candle[] {
   let avgLoss = 0;
   let atr14 = 0;
 
+  // Causal Wilder ADX(14) state
+  let tr14 = 0;
+  let plusDm14 = 0;
+  let minusDm14 = 0;
+  let adx14 = 20;
+
+  // Causal Session VWAP accumulators (reset at new trading day & regular open)
+  let currentDayKey = '';
+  let cumPV = 0;
+  let cumVol = 0;
+
   for (let i = 0; i < rawCandles.length; i++) {
     const c = rawCandles[i];
+    const dayKey = extractSessionDateKey(c.timestamp);
+    const crossedIntoRegularOpen =
+      i > 0 && !rawCandles[i - 1].isRegularHours && c.isRegularHours;
+
+    if (i === 0 || dayKey !== currentDayKey || crossedIntoRegularOpen) {
+      currentDayKey = dayKey;
+      cumPV = 0;
+      cumVol = 0;
+    }
+
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    const barVol = Math.max(0, c.volume);
+    cumPV += typicalPrice * barVol;
+    cumVol += barVol;
+    const vwap = cumVol > 0 ? cumPV / cumVol : c.close;
+    const vwapDistancePct = ((c.close - vwap) / Math.max(0.01, vwap)) * 100;
+
     if (i === 0) {
       ema9 = c.close;
       ema12 = c.close;
       ema21 = c.close;
       ema26 = c.close;
       atr14 = c.high - c.low;
+      tr14 = Math.max(0.0001, c.high - c.low);
+      plusDm14 = 0;
+      minusDm14 = 0;
+      adx14 = 20;
     } else {
       ema9 = c.close * k9 + ema9 * (1 - k9);
       ema12 = c.close * k12 + ema12 * (1 - k12);
       ema21 = c.close * k21 + ema21 * (1 - k21);
       ema26 = c.close * k26 + ema26 * (1 - k26);
 
-      const prevClose = rawCandles[i - 1].close;
+      const prev = rawCandles[i - 1];
+      const prevClose = prev.close;
       const delta = c.close - prevClose;
       const gain = delta > 0 ? delta : 0;
       const loss = delta < 0 ? -delta : 0;
@@ -84,6 +123,29 @@ export function enrichMarketIntelligence(rawCandles: RawCandle[]): Candle[] {
         Math.abs(c.low - prevClose)
       );
       atr14 = i <= 14 ? (atr14 * i + tr) / (i + 1) : (atr14 * 13 + tr) / 14;
+
+      const upMove = c.high - prev.high;
+      const downMove = prev.low - c.low;
+      const plusDm = upMove > downMove && upMove > 0 ? upMove : 0;
+      const minusDm = downMove > upMove && downMove > 0 ? downMove : 0;
+
+      if (i <= 14) {
+        tr14 = (tr14 * (i - 1) + tr) / i;
+        plusDm14 = (plusDm14 * (i - 1) + plusDm) / i;
+        minusDm14 = (minusDm14 * (i - 1) + minusDm) / i;
+      } else {
+        tr14 = (tr14 * 13 + tr) / 14;
+        plusDm14 = (plusDm14 * 13 + plusDm) / 14;
+        minusDm14 = (minusDm14 * 13 + minusDm) / 14;
+      }
+    }
+
+    const plusDi14 = tr14 > 0 ? Math.min(100, (plusDm14 / tr14) * 100) : 0;
+    const minusDi14 = tr14 > 0 ? Math.min(100, (minusDm14 / tr14) * 100) : 0;
+    const diSum = plusDi14 + minusDi14;
+    const dx = diSum > 0 ? (Math.abs(plusDi14 - minusDi14) / diSum) * 100 : 0;
+    if (i > 0) {
+      adx14 = i <= 14 ? (adx14 * (i - 1) + dx) / i : (adx14 * 13 + dx) / 14;
     }
 
     const macdLine = ema12 - ema26;
@@ -109,7 +171,7 @@ export function enrichMarketIntelligence(rawCandles: RawCandle[]): Candle[] {
 
     const emaSpreadPct = ((ema9 - ema21) / Math.max(0.01, ema21)) * 100;
     const atrPct = atr14 / Math.max(0.01, c.close);
-    const regime = classifyRegime(emaSpreadPct, atrPct, zScore20);
+    const regime = classifyRegime(emaSpreadPct, atrPct, zScore20, adx14);
 
     const bbMiddle20 = meanClose;
     const bbUpper20 = meanClose + 2 * stdClose;
@@ -130,6 +192,11 @@ export function enrichMarketIntelligence(rawCandles: RawCandle[]): Candle[] {
       bbLower20,
       atr14,
       volumeZ,
+      vwap,
+      vwapDistancePct,
+      adx14,
+      plusDi14,
+      minusDi14,
     });
   }
 

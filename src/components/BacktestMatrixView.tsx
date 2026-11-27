@@ -6,18 +6,37 @@ import {
   SYMBOL_LIST,
   type SampleScenarioId,
 } from '../engine/data/marketData';
-import { runWalkForwardMatrix, type CustomDatasetMap } from '../engine/portfolio';
-import type { BacktestRow, RawCandle, StrategyConfig, StrategyId, SymbolId } from '../engine/types';
+import {
+  runPortfolioWalkForward,
+  runWalkForwardMatrix,
+  type CustomDatasetMap,
+} from '../engine/portfolio';
+import type {
+  BacktestRow,
+  PortfolioBacktestSummary,
+  RawCandle,
+  RiskLimits,
+  StrategyConfig,
+  StrategyId,
+  SymbolId,
+} from '../engine/types';
 
 interface BacktestMatrixViewProps {
   initialCapital: number;
   alpacaConfigured: boolean;
   strategyConfigs: Record<StrategyId, StrategyConfig>;
+  riskLimits: RiskLimits;
   onToggleGlobalFilter: (
-    key: 'useAtrSizingAndStops' | 'useBreadthFilter' | 'useTimeOfDayFilter'
+    key:
+      | 'useAtrSizingAndStops'
+      | 'useBreadthFilter'
+      | 'useTimeOfDayFilter'
+      | 'useVwapAnchor'
+      | 'useAdxRegimeGate'
   ) => void;
   onSelectStrategyAndSymbol: (strategyId: StrategyId, symbol: BacktestRow['symbol']) => void;
   onSaveExperiment: (row: BacktestRow) => void;
+  onSavePortfolioExperiment: (summary: PortfolioBacktestSummary) => void;
 }
 
 type SortKey =
@@ -31,9 +50,11 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
   initialCapital,
   alpacaConfigured,
   strategyConfigs,
+  riskLimits,
   onToggleGlobalFilter,
   onSelectStrategyAndSymbol,
   onSaveExperiment,
+  onSavePortfolioExperiment,
 }) => {
   const [horizonBars, setHorizonBars] = useState<number>(240);
   const [inSamplePct, setInSamplePct] = useState<number>(65);
@@ -48,6 +69,28 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
   const [loadingAlpaca, setLoadingAlpaca] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const portfolioSummaries = useMemo(() => {
+    void runVersion;
+    return runPortfolioWalkForward(
+      initialCapital,
+      horizonBars,
+      inSamplePct,
+      feeBps,
+      customDatasets,
+      strategyConfigs,
+      riskLimits
+    );
+  }, [
+    initialCapital,
+    horizonBars,
+    inSamplePct,
+    feeBps,
+    runVersion,
+    customDatasets,
+    strategyConfigs,
+    riskLimits,
+  ]);
+
   const rows = useMemo(() => {
     void runVersion;
     const raw = runWalkForwardMatrix(
@@ -56,7 +99,8 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
       inSamplePct,
       feeBps,
       customDatasets,
-      strategyConfigs
+      strategyConfigs,
+      riskLimits
     );
     return [...raw].sort((a, b) => {
       if (sortBy === 'maxDrawdownPct') {
@@ -73,6 +117,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
     runVersion,
     customDatasets,
     strategyConfigs,
+    riskLimits,
   ]);
 
   const bestRow = rows[0];
@@ -81,6 +126,15 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
   const handleLog = (row: BacktestRow) => {
     onSaveExperiment(row);
     const key = `${row.strategyId}-${row.symbol}`;
+    setSavedKey(key);
+    window.setTimeout(() => {
+      setSavedKey((curr) => (curr === key ? null : curr));
+    }, 1500);
+  };
+
+  const handleLogPortfolio = (summary: PortfolioBacktestSummary) => {
+    onSavePortfolioExperiment(summary);
+    const key = `port-${summary.strategyId}`;
     setSavedKey(key);
     window.setTimeout(() => {
       setSavedKey((curr) => (curr === key ? null : curr));
@@ -325,6 +379,8 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                 { key: 'useAtrSizingAndStops', label: 'ATR Sizing/Stops' },
                 { key: 'useBreadthFilter', label: 'Breadth Gate' },
                 { key: 'useTimeOfDayFilter', label: 'Time-of-Day' },
+                { key: 'useVwapAnchor', label: 'VWAP Anchor' },
+                { key: 'useAdxRegimeGate', label: 'ADX Gate' },
               ] as const
             ).map((item) => {
               const allOn = Object.values(strategyConfigs).every((c) => c[item.key]);
@@ -346,6 +402,114 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
           </div>
 
           {datasetError && <div className="text-xs text-rose-500">{datasetError}</div>}
+        </div>
+
+        <div className="border-b border-slate-200 dark:border-slate-800">
+          <div className="px-5 py-3 bg-slate-50/50 dark:bg-slate-950/30 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Portfolio-Level Multi-Asset Contention (Shared $100,000 Cash Pool)
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                All 6 core symbols compete for capital simultaneously under active Risk Gateway exposure and SPY-correlation limits
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <th className="py-2.5 px-4">Strategy Sleeve</th>
+                  <th className="py-2.5 px-4">Validation</th>
+                  <th className="py-2.5 px-4 text-right">IS Return</th>
+                  <th className="py-2.5 px-4 text-right">OOS Return</th>
+                  <th className="py-2.5 px-4 text-right">EW Bench</th>
+                  <th className="py-2.5 px-4 text-right">OOS Sharpe / Sortino</th>
+                  <th className="py-2.5 px-4 text-right">Max DD</th>
+                  <th className="py-2.5 px-4 text-right">Closed / Blocks</th>
+                  <th className="py-2.5 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70 text-xs">
+                {portfolioSummaries.map((s) => {
+                  const isClean =
+                    s.validationFlags.length === 1 && s.validationFlags[0] === 'Clean Pass';
+                  const justSaved = savedKey === `port-${s.strategyId}`;
+                  return (
+                    <tr
+                      key={s.strategyId}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="py-2.5 px-4 font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                        {s.strategyName} · v{s.strategyVersion}
+                      </td>
+                      <td
+                        className={`py-2.5 px-4 font-mono whitespace-nowrap ${
+                          isClean
+                            ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                            : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        {s.validationFlags.join(' · ')}
+                      </td>
+                      <td
+                        className={`py-2.5 px-4 text-right font-mono tabular-nums whitespace-nowrap ${
+                          s.inSampleReturnPct >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {s.inSampleReturnPct >= 0 ? '+' : ''}
+                        {s.inSampleReturnPct.toFixed(2)}%
+                      </td>
+                      <td
+                        className={`py-2.5 px-4 text-right font-mono font-semibold tabular-nums whitespace-nowrap ${
+                          s.outOfSampleReturnPct >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {s.outOfSampleReturnPct >= 0 ? '+' : ''}
+                        {s.outOfSampleReturnPct.toFixed(2)}%
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {s.benchmarkOosReturnPct >= 0 ? '+' : ''}
+                        {s.benchmarkOosReturnPct.toFixed(2)}%
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                        {s.outOfSampleSharpe.toFixed(2)} / {s.outOfSampleSortino.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                        -{s.maxDrawdownPct.toFixed(2)}%
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {s.tradeCount} / {s.riskBlockedCount} blk
+                      </td>
+                      <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleLogPortfolio(s)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                        >
+                          {justSaved ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Saved
+                            </>
+                          ) : (
+                            <>
+                              <BookmarkPlus className="w-3 h-3" />
+                              Log Portfolio
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

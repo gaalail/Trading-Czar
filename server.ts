@@ -186,6 +186,7 @@ async function startServer() {
       return {
         index: idx,
         timestamp: `${parts.month}-${parts.day} ${hhStr}:${minStr}`,
+        barEpochMs: d.getTime(),
         isRegularHours,
         open: b.o,
         high: b.h,

@@ -179,4 +179,93 @@ describe('Fail-Closed Risk Gateway', () => {
     expect(updated.riskEvents[0].status).toBe('APPROVED');
     expect(updated.cash).toBeLessThan(100000);
   });
+
+  it('blocks excessive correlated SPY-beta exposure via CORRELATION_CONCENTRATION_CAP', () => {
+    const market = buildTestMarket();
+    const portfolio = createInitialPortfolio('neural-perceptron', 100000, market);
+    const regularCandle = { ...market.QQQ[market.QQQ.length - 1], isRegularHours: true };
+
+    const res = evaluateRiskGate({
+      portfolio,
+      symbol: 'QQQ',
+      side: 'BUY',
+      quantity: 30,
+      price: 500,
+      fee: 7.5,
+      totalEquity: 100000,
+      limits: { ...DEFAULT_RISK_LIMITS, maxCorrelatedExposurePct: 0.55 },
+      latestCandle: regularCandle,
+      symbolCorrToSpy: 0.88,
+      correlatedOpenValue: 45000,
+    });
+
+    expect(res.approved).toBe(false);
+    expect(res.rule).toBe('CORRELATION_CONCENTRATION_CAP');
+  });
+
+  it('blocks stale live BUY quotes via STALE_OR_INVALID_DATA while still allowing protective SELL exits', () => {
+    const market = buildTestMarket();
+    const portfolio = createInitialPortfolio('neural-perceptron', 100000, market);
+    portfolio.positions.NVDA.quantity = 10;
+    const nowMs = Date.UTC(2026, 10, 27, 15, 0, 0);
+    const staleCandle = {
+      ...market.NVDA[market.NVDA.length - 1],
+      isRegularHours: true,
+      barEpochMs: nowMs - 75 * 60 * 1000, // 75 minutes stale (> 45m limit)
+    };
+
+    const buyRes = evaluateRiskGate({
+      portfolio,
+      symbol: 'NVDA',
+      side: 'BUY',
+      quantity: 10,
+      price: staleCandle.close,
+      fee: 1,
+      totalEquity: 100000,
+      limits: { ...DEFAULT_RISK_LIMITS, maxBarAgeMinutes: 45 },
+      latestCandle: staleCandle,
+      nowMs,
+    });
+    expect(buyRes.approved).toBe(false);
+    expect(buyRes.rule).toBe('STALE_OR_INVALID_DATA');
+
+    const sellRes = evaluateRiskGate({
+      portfolio,
+      symbol: 'NVDA',
+      side: 'SELL',
+      quantity: 10,
+      price: staleCandle.close,
+      fee: 1,
+      totalEquity: 100000,
+      limits: { ...DEFAULT_RISK_LIMITS, maxBarAgeMinutes: 45 },
+      latestCandle: staleCandle,
+      nowMs,
+    });
+    expect(sellRes.approved).toBe(true);
+  });
+
+  it('blocks new BUY entries after 15:40 ET via PRE_CLOSE_ENTRY_CUTOFF when flattenBeforeClose is active', () => {
+    const market = buildTestMarket();
+    const portfolio = createInitialPortfolio('neural-perceptron', 100000, market);
+    const lateCandle = {
+      ...market.NVDA[market.NVDA.length - 1],
+      timestamp: '11-27 15:45',
+      isRegularHours: true,
+    };
+
+    const res = evaluateRiskGate({
+      portfolio,
+      symbol: 'NVDA',
+      side: 'BUY',
+      quantity: 10,
+      price: lateCandle.close,
+      fee: 1,
+      totalEquity: 100000,
+      limits: { ...DEFAULT_RISK_LIMITS, flattenBeforeClose: true },
+      latestCandle: lateCandle,
+    });
+
+    expect(res.approved).toBe(false);
+    expect(res.rule).toBe('PRE_CLOSE_ENTRY_CUTOFF');
+  });
 });

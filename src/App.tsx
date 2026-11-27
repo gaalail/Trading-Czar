@@ -46,6 +46,7 @@ import {
   createInitialPortfolio,
   executeOrder,
   markToMarketAndRecord,
+  runDiscoveredSymbolWalkForward,
   stepAISignals,
 } from './engine/portfolio';
 import { DEFAULT_RISK_LIMITS } from './engine/risk';
@@ -55,6 +56,7 @@ import type {
   Candle,
   ExperimentRecord,
   ModelDecision,
+  PortfolioBacktestSummary,
   PortfolioState,
   RawCandle,
   RiskLimits,
@@ -628,7 +630,12 @@ export function App() {
   };
 
   const handleToggleGlobalFilter = (
-    key: 'useAtrSizingAndStops' | 'useBreadthFilter' | 'useTimeOfDayFilter'
+    key:
+      | 'useAtrSizingAndStops'
+      | 'useBreadthFilter'
+      | 'useTimeOfDayFilter'
+      | 'useVwapAnchor'
+      | 'useAdxRegimeGate'
   ) => {
     setStrategyConfigs((prev) => {
       const allOn = Object.values(prev).every((c) => c[key]);
@@ -690,6 +697,53 @@ export function App() {
         winRatePct: row.winRatePct,
         profitFactor: row.profitFactor,
         tradeCount: row.tradeCount,
+      },
+    };
+    setExperiments((prev) => [record, ...prev]);
+    fetch('/api/experiments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }).catch(() => {
+      // Fallback to localStorage only
+    });
+  };
+
+  const handleSavePortfolioExperiment = (summary: PortfolioBacktestSummary) => {
+    const cfg = strategyConfigs[summary.strategyId];
+    const record: ExperimentRecord = {
+      id: `exp-port-${Date.now()}-${summary.strategyId}`,
+      createdAt: new Date().toISOString(),
+      title: `${summary.strategyName} Multi-Asset Portfolio WFO (${summary.horizonBars}b)`,
+      hypothesis: `Testing whether ${summary.strategyName} beats the equal-weight 6-stock benchmark across one shared $100k pool with correlation & exposure caps enforced.`,
+      limitations: `${summary.inSamplePct}/${100 - summary.inSamplePct} IS/OOS split with frozen OOS weights (${summary.feeBps} bps costs; ${summary.riskBlockedCount} orders blocked by Risk Gateway).`,
+      verdict:
+        summary.outOfSampleSharpe >= 0.8 && summary.outOfSampleReturnPct > summary.benchmarkOosReturnPct
+          ? 'Validated'
+          : 'Pending Review',
+      strategyId: summary.strategyId,
+      strategyName: summary.strategyName,
+      strategyVersion: summary.strategyVersion,
+      symbol: 'MULTI-ASSET',
+      datasetFingerprint: `port-wfo-${summary.horizonBars}b-${summary.feeBps}bps`,
+      horizonBars: summary.horizonBars,
+      feeBps: summary.feeBps,
+      parameters: {
+        confidenceThreshold: cfg.confidenceThreshold,
+        maxPositionPct: cfg.maxPositionPct,
+        stopLossPct: cfg.stopLossPct,
+        takeProfitPct: cfg.takeProfitPct,
+        learningRate: cfg.learningRate,
+      },
+      metrics: {
+        inSampleReturnPct: summary.inSampleReturnPct,
+        outOfSampleReturnPct: summary.outOfSampleReturnPct,
+        benchmarkReturnPct: summary.benchmarkOosReturnPct,
+        sharpeRatio: summary.outOfSampleSharpe,
+        maxDrawdownPct: summary.maxDrawdownPct,
+        winRatePct: summary.winRatePct,
+        profitFactor: summary.profitFactor,
+        tradeCount: summary.tradeCount,
       },
     };
     setExperiments((prev) => [record, ...prev]);
@@ -820,6 +874,72 @@ export function App() {
       breadth
     );
   }, [inspectedTicker, activeDecision, currentStrategyConfig, activePortfolio.weights, breadth]);
+
+  const inspectedWfoCheck = useMemo(() => {
+    if (!inspectedTicker) return null;
+    return runDiscoveredSymbolWalkForward(
+      inspectedTicker.symbol,
+      inspectedTicker.candles,
+      currentStrategyConfig,
+      INITIAL_CAPITAL,
+      65,
+      riskLimits
+    );
+  }, [inspectedTicker, currentStrategyConfig, riskLimits]);
+
+  const [discoveryLoggedSymbol, setDiscoveryLoggedSymbol] = useState<string | null>(null);
+
+  const handleSaveDiscoveryExperiment = () => {
+    if (!inspectedWfoCheck || !inspectedTicker) return;
+    const cfg = currentStrategyConfig;
+    const record: ExperimentRecord = {
+      id: `exp-disc-${Date.now()}-${inspectedWfoCheck.symbol}`,
+      createdAt: new Date().toISOString(),
+      title: `Discovery Check: ${cfg.name} on ${inspectedWfoCheck.symbol}`,
+      hypothesis: `Evaluating ${inspectedTicker.sourceLabel} mover ${inspectedWfoCheck.symbol} out-of-sample using ${cfg.name} before considering watchlist promotion.`,
+      limitations: `Read-only external discovery check (${inspectedWfoCheck.horizonBars} bars, ${feedMode === 'alpaca' ? 'Alpaca IEX' : 'Simulated'}); not routed to core sleeves.`,
+      verdict:
+        inspectedWfoCheck.outOfSampleSharpe >= 0.8 && inspectedWfoCheck.outOfSampleReturnPct > 0
+          ? 'Validated'
+          : 'Pending Review',
+      strategyId: cfg.id,
+      strategyName: cfg.name,
+      strategyVersion: cfg.version,
+      symbol: inspectedWfoCheck.symbol,
+      datasetFingerprint: inspectedWfoCheck.datasetFingerprint,
+      horizonBars: inspectedWfoCheck.horizonBars,
+      feeBps: cfg.feeBps,
+      parameters: {
+        confidenceThreshold: cfg.confidenceThreshold,
+        maxPositionPct: cfg.maxPositionPct,
+        stopLossPct: cfg.stopLossPct,
+        takeProfitPct: cfg.takeProfitPct,
+        learningRate: cfg.learningRate,
+      },
+      metrics: {
+        inSampleReturnPct: inspectedWfoCheck.inSampleReturnPct,
+        outOfSampleReturnPct: inspectedWfoCheck.outOfSampleReturnPct,
+        benchmarkReturnPct: inspectedWfoCheck.benchmarkOosReturnPct,
+        sharpeRatio: inspectedWfoCheck.outOfSampleSharpe,
+        maxDrawdownPct: inspectedWfoCheck.maxDrawdownPct,
+        winRatePct: inspectedWfoCheck.winRatePct,
+        profitFactor: inspectedWfoCheck.profitFactor,
+        tradeCount: inspectedWfoCheck.tradeCount,
+      },
+    };
+    setExperiments((prev) => [record, ...prev]);
+    setDiscoveryLoggedSymbol(inspectedWfoCheck.symbol);
+    window.setTimeout(() => {
+      setDiscoveryLoggedSymbol((curr) => (curr === inspectedWfoCheck.symbol ? null : curr));
+    }, 1800);
+    fetch('/api/experiments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }).catch(() => {
+      // Fallback to localStorage only
+    });
+  };
 
   const opportunities = useMemo(
     () =>
@@ -1434,21 +1554,44 @@ export function App() {
                   <div className="p-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
                     {isInspectingExternal ? (
                       <>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500 dark:text-slate-400">
-                            Sleeve Execution Status
-                          </span>
-                          <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                            Read-Only Preview ({displayedSymbol})
-                          </span>
+                        {inspectedWfoCheck && (
+                          <div className="space-y-1.5 text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 dark:text-slate-400">
+                                Instant WFO Check ({inspectedWfoCheck.horizonBars}b)
+                              </span>
+                              <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
+                                {inspectedWfoCheck.validationFlags.join(' · ')}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                              <span>
+                                OOS {inspectedWfoCheck.outOfSampleReturnPct >= 0 ? '+' : ''}
+                                {inspectedWfoCheck.outOfSampleReturnPct.toFixed(2)}%
+                              </span>
+                              <span>Sharpe {inspectedWfoCheck.outOfSampleSharpe.toFixed(2)}</span>
+                              <span>
+                                {inspectedWfoCheck.tradeCount} trades · DD -{inspectedWfoCheck.maxDrawdownPct.toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={handleSaveDiscoveryExperiment}
+                            className="px-3 py-2 text-xs font-semibold rounded-md bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90 transition-opacity cursor-pointer"
+                          >
+                            {discoveryLoggedSymbol === displayedSymbol ? 'Logged Run' : 'Log Discovery Run'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInspectedTicker(null)}
+                            className="px-3 py-2 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          >
+                            Return to {activeSymbol}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setInspectedTicker(null)}
-                          className="w-full px-4 py-2 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                        >
-                          Return to Core Sleeve ({activeSymbol})
-                        </button>
                       </>
                     ) : (
                       <>
@@ -1719,6 +1862,7 @@ export function App() {
               initialCapital={INITIAL_CAPITAL}
               alpacaConfigured={alpacaStatus.configured}
               strategyConfigs={strategyConfigs}
+              riskLimits={riskLimits}
               onToggleGlobalFilter={handleToggleGlobalFilter}
               onSelectStrategyAndSymbol={(stratId, sym) => {
                 handleSelectStrategy(stratId);
@@ -1726,6 +1870,7 @@ export function App() {
                 setActiveTab('desk');
               }}
               onSaveExperiment={handleSaveBacktestExperiment}
+              onSavePortfolioExperiment={handleSavePortfolioExperiment}
             />
           )}
 

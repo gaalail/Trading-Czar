@@ -245,10 +245,10 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
             <div className="flex items-center justify-between gap-4 py-1">
               <div>
                 <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Cross-Asset Market Breadth Gate
+                  Cross-Asset Market Breadth &amp; SPY Beta Gate
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Dampens new long entries when fewer than 35% of tracked symbols are above EMA 21.
+                  Dampens trend scaling and raises entry hurdles during weak breadth (&lt;35% above EMA 21) and high SPY correlation.
                 </div>
               </div>
               <button
@@ -267,10 +267,10 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
             <div className="flex items-center justify-between gap-4 py-1">
               <div>
                 <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Time-of-Day Session Shaping
+                  Time-of-Day Regime Interaction
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Favors Open Drive (09:30–10:30) and Power Hour (14:30–16:00) over Midday Chop.
+                  Boosts trend breakout weight during Open Drive/Power Hour and pivots toward Z-Score reversion with tighter hurdles during Midday Chop.
                 </div>
               </div>
               <button
@@ -285,6 +285,54 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
                 }`}
               >
                 {strategyConfig.useTimeOfDayFilter ? 'Enabled' : 'Off'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 py-1">
+              <div>
+                <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Session VWAP Institutional Anchor
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Rewards entries near intraday volume-weighted fair value (VWAP) and penalizes chasing stretched spikes (&gt;2.2% above VWAP).
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateConfig({ useVwapAnchor: !strategyConfig.useVwapAnchor })
+                }
+                className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  strategyConfig.useVwapAnchor
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                }`}
+              >
+                {strategyConfig.useVwapAnchor ? 'Enabled' : 'Off'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 py-1">
+              <div>
+                <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  ADX(14) Trend vs. Chop Gate
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Amplifies trend momentum when ADX &ge; 25 and suppresses false breakouts in sideways chop when ADX &lt; 18.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateConfig({ useAdxRegimeGate: !strategyConfig.useAdxRegimeGate })
+                }
+                className={`px-3 py-1.5 text-xs font-mono font-medium rounded border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  strategyConfig.useAdxRegimeGate
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800'
+                }`}
+              >
+                {strategyConfig.useAdxRegimeGate ? 'Enabled' : 'Off'}
               </button>
             </div>
           </div>
@@ -350,7 +398,7 @@ export const StrategyConfigView: React.FC<StrategyConfigViewProps> = ({
         </div>
 
         <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Weights adapt automatically after each closed AI round-trip in Momentum Perceptron mode using realized trade outcome and feature polarity.
+          Weights adapt automatically after each closed AI round-trip in Momentum Perceptron mode using the saved <strong>entry-bar feature snapshot</strong> and realized trade outcome.
         </div>
       </div>
     </div>

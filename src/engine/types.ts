@@ -17,6 +17,7 @@ export interface SymbolProfile {
 export interface RawCandle {
   index: number;
   timestamp: string;
+  barEpochMs?: number;
   isRegularHours: boolean;
   open: number;
   high: number;
@@ -40,6 +41,11 @@ export interface Candle extends RawCandle {
   bbLower20: number;
   atr14: number;
   volumeZ: number;
+  vwap: number;
+  vwapDistancePct: number;
+  adx14: number;
+  plusDi14: number;
+  minusDi14: number;
 }
 
 export type StrategyId = 'neural-perceptron' | 'mean-reversion' | 'regime-ensemble';
@@ -67,6 +73,8 @@ export interface StrategyConfig {
   useAtrSizingAndStops: boolean;
   useBreadthFilter: boolean;
   useTimeOfDayFilter: boolean;
+  useVwapAnchor: boolean;
+  useAdxRegimeGate: boolean;
 }
 
 export type SignalAction = 'BUY' | 'SELL' | 'HOLD';
@@ -88,6 +96,16 @@ export interface ModelDecision {
   contributions: FeatureContribution[];
 }
 
+export interface EntryFeatureSnapshot {
+  emaSpread: number;
+  rsiCentered: number;
+  macdNorm: number;
+  zScore20: number;
+  volAligned: number;
+  vwapDistPct?: number;
+  adx14?: number;
+}
+
 export interface Position {
   symbol: SymbolId;
   quantity: number;
@@ -96,6 +114,7 @@ export interface Position {
   openedAtIndex: number;
   unrealizedPnl: number;
   unrealizedPnlPct: number;
+  entryFeatures?: EntryFeatureSnapshot;
 }
 
 export interface TradeFill {
@@ -119,9 +138,12 @@ export interface RiskLimits {
   executionMode: ExecutionMode;
   maxPortfolioExposurePct: number;
   maxSinglePositionPct: number;
+  maxCorrelatedExposurePct: number;
   maxOrderNotional: number;
   maxBarVolumePct: number;
   enforceMarketHours: boolean;
+  flattenBeforeClose: boolean;
+  maxBarAgeMinutes: number;
   allowShortSelling: false;
   allowMargin: false;
   halted: boolean;
@@ -185,6 +207,27 @@ export interface BacktestRow {
   validationFlags: string[];
 }
 
+export interface PortfolioBacktestSummary {
+  strategyId: StrategyId;
+  strategyVersion: string;
+  strategyName: string;
+  horizonBars: number;
+  inSamplePct: number;
+  feeBps: number;
+  inSampleReturnPct: number;
+  outOfSampleReturnPct: number;
+  benchmarkOosReturnPct: number;
+  outOfSampleSharpe: number;
+  outOfSampleSortino: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  profitFactor: number;
+  tradeCount: number;
+  riskBlockedCount: number;
+  finalEquity: number;
+  validationFlags: string[];
+}
+
 export type ExperimentVerdict = 'Pending Review' | 'Validated' | 'Inconclusive' | 'Rejected';
 
 export interface ExperimentRecord {
@@ -197,7 +240,7 @@ export interface ExperimentRecord {
   strategyId: StrategyId;
   strategyName: string;
   strategyVersion: string;
-  symbol: SymbolId | 'MULTI-ASSET';
+  symbol: string;
   datasetFingerprint: string;
   horizonBars: number;
   feeBps: number;
