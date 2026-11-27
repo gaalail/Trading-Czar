@@ -299,7 +299,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
               value={csvTargetSymbol}
               onChange={(e) => setCsvTargetSymbol(e.target.value as SymbolId)}
               aria-label="Target symbol for dataset loading"
-              className="px-2.5 py-1 text-xs font-mono bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-900 dark:text-slate-100 cursor-pointer"
+              className="px-2.5 py-1 text-xs font-mono bg-white dark:bg-[#0B111C] border border-slate-200 dark:border-slate-800 rounded text-slate-900 dark:text-slate-100 cursor-pointer"
             >
               {SYMBOL_LIST.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -311,21 +311,21 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
             <button
               type="button"
               onClick={() => handleLoadSampleScenario('sideways-chop')}
-              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-[#0B111C] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
             >
               Sample: Choppy Range
             </button>
             <button
               type="button"
               onClick={() => handleLoadSampleScenario('tech-rally')}
-              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-[#0B111C] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
             >
               Sample: Tech Rally
             </button>
             <button
               type="button"
               onClick={() => handleLoadSampleScenario('vol-selloff')}
-              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-[#0B111C] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
             >
               Sample: Vol Selloff
             </button>
@@ -340,7 +340,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-[#0B111C] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5" />
               Upload CSV
@@ -351,7 +351,7 @@ export const BacktestMatrixView: React.FC<BacktestMatrixViewProps> = ({
                 type="button"
                 onClick={handleLoadAlpacaBars}
                 disabled={loadingAlpaca}
-                className="px-2.5 py-1 text-xs font-medium border border-emerald-600/40 rounded bg-emerald-950/30 text-emerald-400 hover:bg-emerald-950/50 disabled:opacity-50 cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium border rounded bg-emerald-500/12 text-emerald-700 border-emerald-500/35 hover:bg-emerald-500/20 dark:bg-emerald-400/15 dark:text-emerald-300 dark:border-emerald-400/35 dark:hover:bg-emerald-400/20 disabled:opacity-50 cursor-pointer"
               >
                 {loadingAlpaca ? 'Fetching Alpaca...' : 'Fetch Alpaca IEX'}
               </button>

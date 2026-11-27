@@ -1198,8 +1198,8 @@ export function App() {
                 title="Switch Live Desk between real Alpaca IEX bars and simulated bars (orders always remain local paper)"
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-medium rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   feedMode === 'alpaca'
-                    ? 'bg-emerald-950/40 text-emerald-400 border-emerald-700/60 hover:bg-emerald-950/60'
-                    : 'bg-white text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    ? 'bg-emerald-500/12 text-emerald-700 border-emerald-500/35 hover:bg-emerald-500/20 dark:bg-emerald-400/15 dark:text-emerald-300 dark:border-emerald-400/35 dark:hover:bg-emerald-400/20'
+                    : 'bg-white text-slate-700 border-slate-200 dark:bg-[#070B12] dark:text-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/70'
                 }`}
               >
                 {alpacaSyncing
@@ -1226,7 +1226,7 @@ export function App() {
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 isRunning
                   ? 'bg-rose-600 text-white hover:bg-rose-700'
-                  : 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90'
+                  : 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 hover:opacity-90'
               }`}
             >
               {isRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
@@ -1254,7 +1254,7 @@ export function App() {
           </div>
         </header>
         {alpacaFeedError && (
-          <div className="bg-rose-950/40 border-b border-rose-800/60 px-6 py-2 text-xs text-rose-300 flex items-center justify-between">
+          <div className="bg-rose-50 dark:bg-rose-950/40 border-b border-rose-200 dark:border-rose-800/60 px-6 py-2 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
             <span>{alpacaFeedError}</span>
             <button
               type="button"

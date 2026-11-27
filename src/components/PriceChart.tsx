@@ -129,6 +129,14 @@ export const PriceChart: React.FC<PriceChartProps> = ({ candles, trades, symbol 
     return ticks;
   }, [minPrice, maxPrice]);
 
+  if (!activeCandle) {
+    return (
+      <div className="px-5 py-12 text-center text-xs text-slate-500 dark:text-slate-400">
+        No price bars available for {symbol}.
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800/80 px-5 py-3">
