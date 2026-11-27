@@ -15,11 +15,11 @@ Data Infrastructure (src/engine/data/)
 ```
 
 - **Data (`src/engine/data/marketData.ts`)**: Generates raw OHLCV bars, CSV datasets, stress-test regimes (`Choppy Range`, `Tech Rally`, `Vol Selloff`), and US market session metadata (`09:30–16:00 ET`) with zero indicator or execution awareness.
-- **Intelligence (`src/engine/intelligence/`)**: Computes causal technical indicators (`indicators.ts` — EMA 9/21, RSI 14, MACD, Bollinger Bands 20/2σ, ATR 14, Volume Z-Score, `sessionWindow`), cross-asset universe breadth (`breadth.ts`), and read-only setup rankings (`scanner.ts`).
-- **Strategies (`src/engine/strategies.ts`)**: Evaluates candidate signals (`BUY` / `SELL` / `HOLD`) with versioned configs, ATR volatility-scaled risk guards, Market Breadth and Time-of-Day entry shaping, and online perceptron weights; never submits orders directly.
-- **Risk Gateway (`src/engine/risk.ts`)**: Fail-closed boundary enforcing `PAPER_ONLY`, no short selling, no margin, regular US market hours, bar-volume participation caps, position concentration caps, and an emergency circuit breaker.
-- **Portfolio & Walk-Forward Lab (`src/engine/portfolio.ts`)**: Runs isolated `$100,000` paper sleeves per strategy (tracking Sharpe, Sortino, Calmar, Alpha vs. Benchmark) and walk-forward out-of-sample backtests with overfit/vanity validation flags and spread + square-root market impact slippage.
-- **Server & Paper Bridge (`server.ts`)**: Serves the Express/Vite app on port `3000`, exposes fail-closed `/api/alpaca/*` paper endpoints (locked strictly to `https://paper-api.alpaca.markets`, configured via `.env.example`), and persists experiments to `knowledge/experiments/registry.json`.
+- **Intelligence (`src/engine/intelligence/`)**: Computes causal technical indicators (`indicators.ts` — EMA 9/21, RSI 14, MACD, Bollinger Bands 20/2σ, ATR 14, Volume Z-Score, Session VWAP, Wilder ADX 14, `sessionWindow`), cross-asset universe breadth & SPY correlation (`breadth.ts`), and read-only setup/discovery rankings (`scanner.ts`, `discovery.ts`).
+- **Strategies (`src/engine/strategies.ts`)**: Evaluates candidate signals (`BUY` / `SELL` / `HOLD`) with versioned v1.3.0 configs, ATR volatility-scaled sizing & stops, Session VWAP anchor, ADX(14) trend-vs-chop gate, Breadth & Time-of-Day interactions, and entry-snapshot online perceptron weights; never submits orders directly.
+- **Risk Gateway (`src/engine/risk.ts`)**: Fail-closed boundary enforcing `PAPER_ONLY`, no short selling, no margin, regular US market hours, live stale-bar age limits, `15:40 ET` pre-close entry cutoff, bar-volume participation caps, SPY-correlation cluster caps, position concentration caps, and an emergency circuit breaker.
+- **Portfolio & Walk-Forward Lab (`src/engine/portfolio.ts`)**: Runs isolated `$100,000` paper sleeves per strategy (with `15:45 ET` EOD flatten and Sharpe, Sortino, Calmar, Alpha vs. Benchmark) plus both per-symbol and shared-pool multi-asset contention walk-forward backtests with frozen OOS weights and overfit/vanity validation flags.
+- **Server & Paper Bridge (`server.ts`)**: Serves the Express/Vite app on port `3000`, exposes fail-closed `/api/alpaca/*` paper bars & market-wide discovery endpoints (locked strictly to `https://paper-api.alpaca.markets`), and persists experiments to `knowledge/experiments/registry.json`.
 
 ## Running Locally
 

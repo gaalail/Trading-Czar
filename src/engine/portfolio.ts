@@ -508,6 +508,191 @@ export interface CustomDatasetMap {
   [key: string]: { rawCandles: RawCandle[]; fingerprint: string } | undefined;
 }
 
+interface SingleSymbolSimResult {
+  horizonBars: number;
+  inSampleReturnPct: number;
+  outOfSampleReturnPct: number;
+  benchmarkOosReturnPct: number;
+  inSampleSharpe: number;
+  outOfSampleSharpe: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  profitFactor: number;
+  tradeCount: number;
+  finalEquity: number;
+  validationFlags: string[];
+}
+
+function simulateSingleSymbolWalkForward(params: {
+  symbol: string;
+  candles: Candle[];
+  strategy: StrategyConfig;
+  initialCapital: number;
+  inSamplePct: number;
+  limits: RiskLimits;
+  minSampleMargin: number;
+  minTradesForSample: number;
+  breadthAtBar?: (barIndex: number) => ReturnType<typeof computeMarketBreadthAtBar>;
+}): SingleSymbolSimResult {
+  const {
+    symbol,
+    candles,
+    strategy,
+    initialCapital,
+    inSamplePct,
+    limits,
+    minSampleMargin,
+    minTradesForSample,
+    breadthAtBar,
+  } = params;
+  const warmup = 25;
+  const effectiveBars = candles.length;
+  const splitIndex = Math.max(
+    warmup + minSampleMargin,
+    Math.min(effectiveBars - minSampleMargin, Math.floor((effectiveBars * inSamplePct) / 100))
+  );
+
+  let cash = initialCapital;
+  let shares = 0;
+  let avgEntry = 0;
+  let entryFeatures: EntryFeatureSnapshot | undefined;
+  let peak = initialCapital;
+  let maxDd = 0;
+  let weights = { ...DEFAULT_WEIGHTS };
+  const closedPnls: number[] = [];
+  const isEquitySeries: number[] = [];
+  const oosEquitySeries: number[] = [];
+  let oosStartEquity = initialCapital;
+  const oosStartPrice = candles[splitIndex]?.close ?? candles[0].close;
+
+  for (let i = warmup; i < effectiveBars; i++) {
+    const slice = candles.slice(0, i + 1);
+    const bar = candles[i];
+    const unrealizedPct = shares > 0 && avgEntry > 0 ? (bar.close - avgEntry) / avgEntry : 0;
+    const breadth = breadthAtBar ? breadthAtBar(i) : undefined;
+    let decision = evaluateModel(
+      symbol,
+      slice,
+      strategy,
+      weights,
+      shares > 0,
+      unrealizedPct,
+      breadth
+    );
+
+    if (limits.flattenBeforeClose && shares > 0 && isPreCloseFlattenWindow(bar)) {
+      decision = { ...decision, action: 'SELL' };
+    }
+
+    const inOos = i >= splitIndex;
+    if (i === splitIndex) {
+      oosStartEquity = cash + shares * bar.close;
+    }
+
+    const blockedPreCloseEntry =
+      limits.flattenBeforeClose &&
+      bar.isRegularHours &&
+      isPreCloseFlattenWindow(bar);
+
+    if (bar.isRegularHours && !blockedPreCloseEntry && decision.action === 'BUY' && shares === 0) {
+      const { sizeScale } = computeAtrScaledRiskGuards(bar, strategy);
+      const budget = cash * strategy.maxPositionPct * 2.5 * sizeScale;
+      const usable = Math.min(cash * 0.98, budget);
+      const feeRate = strategy.feeBps / 10000;
+      const qty = Math.floor(usable / (bar.close * (1 + feeRate)));
+      if (qty > 0 && (bar.volume === 0 || qty / bar.volume <= 0.05)) {
+        const impactMult = 1 + (strategy.feeBps * 0.4) / 10000;
+        const fillPx = bar.close * impactMult;
+        const cost = qty * fillPx * (1 + feeRate);
+        if (cost <= cash) {
+          cash -= cost;
+          shares = qty;
+          avgEntry = fillPx;
+          entryFeatures = extractModelFeatures(slice);
+        }
+      }
+    } else if (bar.isRegularHours && decision.action === 'SELL' && shares > 0) {
+      const feeRate = strategy.feeBps / 10000;
+      const impactMult = 1 - (strategy.feeBps * 0.4) / 10000;
+      const fillPx = bar.close * impactMult;
+      const proceeds = shares * fillPx * (1 - feeRate);
+      const pnl = proceeds - shares * avgEntry;
+      closedPnls.push(pnl);
+      if (!inOos && strategy.id === 'neural-perceptron') {
+        weights = adaptPerceptronWeights(
+          weights,
+          entryFeatures ?? slice,
+          pnl,
+          strategy.learningRate
+        );
+      }
+      cash += proceeds;
+      shares = 0;
+      avgEntry = 0;
+      entryFeatures = undefined;
+    }
+
+    const eq = cash + shares * bar.close;
+    if (i < splitIndex) {
+      isEquitySeries.push(eq);
+    } else {
+      oosEquitySeries.push(eq);
+    }
+
+    if (eq > peak) peak = eq;
+    const dd = peak > 0 ? ((peak - eq) / peak) * 100 : 0;
+    if (dd > maxDd) maxDd = dd;
+  }
+
+  const finalEquity = cash + shares * candles[effectiveBars - 1].close;
+  const isEndEquity = isEquitySeries[isEquitySeries.length - 1] ?? initialCapital;
+  const inSampleReturnPct = ((isEndEquity - initialCapital) / initialCapital) * 100;
+  const outOfSampleReturnPct = ((finalEquity - oosStartEquity) / oosStartEquity) * 100;
+  const benchmarkOosReturnPct =
+    ((candles[effectiveBars - 1].close - oosStartPrice) / Math.max(0.01, oosStartPrice)) * 100;
+
+  const wins = closedPnls.filter((p) => p > 0);
+  const losses = closedPnls.filter((p) => p < 0);
+  const grossWin = wins.reduce((s, p) => s + p, 0);
+  const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
+  const winRatePct = closedPnls.length > 0 ? (wins.length / closedPnls.length) * 100 : 0;
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? 3.5 : 0;
+  const inSampleSharpe = calcSharpeFromSeries(isEquitySeries);
+  const outOfSampleSharpe = calcSharpeFromSeries(oosEquitySeries);
+
+  const validationFlags: string[] = [];
+  if (closedPnls.length < minTradesForSample) {
+    validationFlags.push('Low Sample');
+  }
+  if (inSampleReturnPct > 1.5 && outOfSampleReturnPct < inSampleReturnPct * 0.3) {
+    validationFlags.push('OOS Decay');
+  }
+  if (outOfSampleReturnPct < benchmarkOosReturnPct - 0.5) {
+    validationFlags.push('Trails Benchmark');
+  }
+  if (closedPnls.length >= minTradesForSample && winRatePct >= 65 && profitFactor < 1.15) {
+    validationFlags.push('Win-Rate Trap');
+  }
+  if (validationFlags.length === 0) {
+    validationFlags.push('Clean Pass');
+  }
+
+  return {
+    horizonBars: effectiveBars,
+    inSampleReturnPct,
+    outOfSampleReturnPct,
+    benchmarkOosReturnPct,
+    inSampleSharpe,
+    outOfSampleSharpe,
+    maxDrawdownPct: maxDd,
+    winRatePct,
+    profitFactor,
+    tradeCount: closedPnls.length,
+    finalEquity,
+    validationFlags,
+  };
+}
+
 export function runWalkForwardMatrix(
   initialCapital = 100000,
   bars = 240,
@@ -519,7 +704,6 @@ export function runWalkForwardMatrix(
 ): BacktestRow[] {
   const rows: BacktestRow[] = [];
   const seed = 409;
-  const warmup = 25;
   const activeStrategies = strategyConfigsOverride
     ? STRATEGY_LIST.map((s) => strategyConfigsOverride[s.id] ?? STRATEGIES[s.id])
     : STRATEGY_LIST;
@@ -538,11 +722,6 @@ export function runWalkForwardMatrix(
 
   for (const profile of SYMBOL_LIST) {
     const candles = enrichedBySymbol[profile.id];
-    const effectiveBars = candles.length;
-    const splitIndex = Math.max(
-      warmup + 15,
-      Math.min(effectiveBars - 15, Math.floor((effectiveBars * inSamplePct) / 100))
-    );
     const datasetFingerprint = fingerprintBySymbol[profile.id];
 
     for (const strategy of activeStrategies) {
@@ -551,154 +730,40 @@ export function runWalkForwardMatrix(
         ...strategy,
         feeBps: effectiveFeeBps,
       };
-
-      let cash = initialCapital;
-      let shares = 0;
-      let avgEntry = 0;
-      let entryFeatures: EntryFeatureSnapshot | undefined;
-      let peak = initialCapital;
-      let maxDd = 0;
-      let weights = { ...DEFAULT_WEIGHTS };
-      const closedPnls: number[] = [];
-      const isEquitySeries: number[] = [];
-      const oosEquitySeries: number[] = [];
-      let oosStartEquity = initialCapital;
-      const oosStartPrice = candles[splitIndex].close;
-
-      for (let i = warmup; i < candles.length; i++) {
-        const slice = candles.slice(0, i + 1);
-        const bar = candles[i];
-        const unrealizedPct = shares > 0 && avgEntry > 0 ? (bar.close - avgEntry) / avgEntry : 0;
-        const breadth = effectiveConfig.useBreadthFilter
-          ? computeMarketBreadthAtBar(enrichedBySymbol, profile.id, i)
-          : undefined;
-        let decision = evaluateModel(
-          profile.id,
-          slice,
-          effectiveConfig,
-          weights,
-          shares > 0,
-          unrealizedPct,
-          breadth
-        );
-
-        if (limits.flattenBeforeClose && shares > 0 && isPreCloseFlattenWindow(bar)) {
-          decision = { ...decision, action: 'SELL' };
-        }
-
-        const inOos = i >= splitIndex;
-        if (i === splitIndex) {
-          oosStartEquity = cash + shares * bar.close;
-        }
-
-        const blockedPreCloseEntry =
-          limits.flattenBeforeClose &&
-          bar.isRegularHours &&
-          isPreCloseFlattenWindow(bar);
-
-        if (bar.isRegularHours && !blockedPreCloseEntry && decision.action === 'BUY' && shares === 0) {
-          const { sizeScale } = computeAtrScaledRiskGuards(bar, effectiveConfig);
-          const budget = cash * effectiveConfig.maxPositionPct * 2.5 * sizeScale;
-          const usable = Math.min(cash * 0.98, budget);
-          const feeRate = effectiveFeeBps / 10000;
-          const qty = Math.floor(usable / (bar.close * (1 + feeRate)));
-          if (qty > 0 && (bar.volume === 0 || qty / bar.volume <= 0.05)) {
-            const impactMult = 1 + (effectiveFeeBps * 0.4) / 10000;
-            const fillPx = bar.close * impactMult;
-            const cost = qty * fillPx * (1 + feeRate);
-            if (cost <= cash) {
-              cash -= cost;
-              shares = qty;
-              avgEntry = fillPx;
-              entryFeatures = extractModelFeatures(slice);
-            }
-          }
-        } else if (bar.isRegularHours && decision.action === 'SELL' && shares > 0) {
-          const feeRate = effectiveFeeBps / 10000;
-          const impactMult = 1 - (effectiveFeeBps * 0.4) / 10000;
-          const fillPx = bar.close * impactMult;
-          const proceeds = shares * fillPx * (1 - feeRate);
-          const pnl = proceeds - shares * avgEntry;
-          closedPnls.push(pnl);
-          if (!inOos && effectiveConfig.id === 'neural-perceptron') {
-            weights = adaptPerceptronWeights(
-              weights,
-              entryFeatures ?? slice,
-              pnl,
-              effectiveConfig.learningRate
-            );
-          }
-          cash += proceeds;
-          shares = 0;
-          avgEntry = 0;
-          entryFeatures = undefined;
-        }
-
-        const eq = cash + shares * bar.close;
-        if (i < splitIndex) {
-          isEquitySeries.push(eq);
-        } else {
-          oosEquitySeries.push(eq);
-        }
-
-        if (eq > peak) peak = eq;
-        const dd = ((peak - eq) / peak) * 100;
-        if (dd > maxDd) maxDd = dd;
-      }
-
-      const finalEquity = cash + shares * candles[candles.length - 1].close;
-      const isEndEquity = isEquitySeries[isEquitySeries.length - 1] ?? initialCapital;
-      const inSampleReturnPct = ((isEndEquity - initialCapital) / initialCapital) * 100;
-      const outOfSampleReturnPct = ((finalEquity - oosStartEquity) / oosStartEquity) * 100;
-      const benchmarkOosReturnPct =
-        ((candles[candles.length - 1].close - oosStartPrice) / oosStartPrice) * 100;
-
-      const wins = closedPnls.filter((p) => p > 0);
-      const losses = closedPnls.filter((p) => p < 0);
-      const grossWin = wins.reduce((s, p) => s + p, 0);
-      const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
-      const winRatePct = closedPnls.length > 0 ? (wins.length / closedPnls.length) * 100 : 0;
-      const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? 3.5 : 0;
-      const inSampleSharpe = calcSharpeFromSeries(isEquitySeries);
-      const outOfSampleSharpe = calcSharpeFromSeries(oosEquitySeries);
-
-      const validationFlags: string[] = [];
-      if (closedPnls.length < 4) {
-        validationFlags.push('Low Sample');
-      }
-      if (inSampleReturnPct > 1.5 && outOfSampleReturnPct < inSampleReturnPct * 0.3) {
-        validationFlags.push('OOS Decay');
-      }
-      if (outOfSampleReturnPct < benchmarkOosReturnPct - 0.5) {
-        validationFlags.push('Trails Benchmark');
-      }
-      if (closedPnls.length >= 4 && winRatePct >= 65 && profitFactor < 1.15) {
-        validationFlags.push('Win-Rate Trap');
-      }
-      if (validationFlags.length === 0) {
-        validationFlags.push('Clean Pass');
-      }
+      const sim = simulateSingleSymbolWalkForward({
+        symbol: profile.id,
+        candles,
+        strategy: effectiveConfig,
+        initialCapital,
+        inSamplePct,
+        limits,
+        minSampleMargin: 15,
+        minTradesForSample: 4,
+        breadthAtBar: effectiveConfig.useBreadthFilter
+          ? (i) => computeMarketBreadthAtBar(enrichedBySymbol, profile.id, i)
+          : undefined,
+      });
 
       rows.push({
         strategyId: effectiveConfig.id,
         strategyVersion: effectiveConfig.version,
         strategyName: effectiveConfig.name,
         symbol: profile.id,
-        horizonBars: effectiveBars,
+        horizonBars: sim.horizonBars,
         inSamplePct,
         feeBps: effectiveFeeBps,
-        inSampleReturnPct,
-        outOfSampleReturnPct,
-        benchmarkOosReturnPct,
-        inSampleSharpe,
-        outOfSampleSharpe,
-        maxDrawdownPct: maxDd,
-        winRatePct,
-        tradeCount: closedPnls.length,
-        profitFactor,
-        finalEquity,
+        inSampleReturnPct: sim.inSampleReturnPct,
+        outOfSampleReturnPct: sim.outOfSampleReturnPct,
+        benchmarkOosReturnPct: sim.benchmarkOosReturnPct,
+        inSampleSharpe: sim.inSampleSharpe,
+        outOfSampleSharpe: sim.outOfSampleSharpe,
+        maxDrawdownPct: sim.maxDrawdownPct,
+        winRatePct: sim.winRatePct,
+        tradeCount: sim.tradeCount,
+        profitFactor: sim.profitFactor,
+        finalEquity: sim.finalEquity,
         datasetFingerprint,
-        validationFlags,
+        validationFlags: sim.validationFlags,
       });
     }
   }
@@ -896,127 +961,32 @@ export function runDiscoveredSymbolWalkForward(
   inSamplePct = 65,
   limits: RiskLimits = DEFAULT_RISK_LIMITS
 ): DiscoveredWalkForwardCheck {
-  const warmup = 25;
-  const effectiveBars = candles.length;
-  const splitIndex = Math.max(
-    warmup + 10,
-    Math.min(effectiveBars - 10, Math.floor((effectiveBars * inSamplePct) / 100))
-  );
-
-  let cash = initialCapital;
-  let shares = 0;
-  let avgEntry = 0;
-  let entryFeatures: EntryFeatureSnapshot | undefined;
-  let peak = initialCapital;
-  let maxDd = 0;
-  let weights = { ...DEFAULT_WEIGHTS };
-  const closedPnls: number[] = [];
-  const isEquitySeries: number[] = [];
-  const oosEquitySeries: number[] = [];
-  let oosStartEquity = initialCapital;
-  const oosStartPrice = candles[splitIndex]?.close ?? candles[0].close;
-
-  for (let i = warmup; i < effectiveBars; i++) {
-    const slice = candles.slice(0, i + 1);
-    const bar = candles[i];
-    const unrealizedPct = shares > 0 && avgEntry > 0 ? (bar.close - avgEntry) / avgEntry : 0;
-    let decision = evaluateModel(symbol, slice, strategy, weights, shares > 0, unrealizedPct);
-    if (limits.flattenBeforeClose && shares > 0 && isPreCloseFlattenWindow(bar)) {
-      decision = { ...decision, action: 'SELL' };
-    }
-    const inOos = i >= splitIndex;
-    if (i === splitIndex) {
-      oosStartEquity = cash + shares * bar.close;
-    }
-
-    const blockedPreCloseEntry =
-      limits.flattenBeforeClose &&
-      bar.isRegularHours &&
-      isPreCloseFlattenWindow(bar);
-
-    if (bar.isRegularHours && !blockedPreCloseEntry && decision.action === 'BUY' && shares === 0) {
-      const { sizeScale } = computeAtrScaledRiskGuards(bar, strategy);
-      const budget = Math.min(cash * 0.98, cash * strategy.maxPositionPct * 2.5 * sizeScale);
-      const feeRate = strategy.feeBps / 10000;
-      const qty = Math.floor(budget / (bar.close * (1 + feeRate)));
-      if (qty > 0 && (bar.volume === 0 || qty / bar.volume <= 0.05)) {
-        const fillPx = bar.close * (1 + (strategy.feeBps * 0.4) / 10000);
-        const cost = qty * fillPx * (1 + feeRate);
-        if (cost <= cash) {
-          cash -= cost;
-          shares = qty;
-          avgEntry = fillPx;
-          entryFeatures = extractModelFeatures(slice);
-        }
-      }
-    } else if (bar.isRegularHours && decision.action === 'SELL' && shares > 0) {
-      const feeRate = strategy.feeBps / 10000;
-      const fillPx = bar.close * (1 - (strategy.feeBps * 0.4) / 10000);
-      const proceeds = shares * fillPx * (1 - feeRate);
-      const pnl = proceeds - shares * avgEntry;
-      closedPnls.push(pnl);
-      if (!inOos && strategy.id === 'neural-perceptron') {
-        weights = adaptPerceptronWeights(
-          weights,
-          entryFeatures ?? slice,
-          pnl,
-          strategy.learningRate
-        );
-      }
-      cash += proceeds;
-      shares = 0;
-      avgEntry = 0;
-      entryFeatures = undefined;
-    }
-
-    const eq = cash + shares * bar.close;
-    if (i < splitIndex) isEquitySeries.push(eq);
-    else oosEquitySeries.push(eq);
-
-    if (eq > peak) peak = eq;
-    const dd = peak > 0 ? ((peak - eq) / peak) * 100 : 0;
-    if (dd > maxDd) maxDd = dd;
-  }
-
-  const finalEquity = cash + shares * candles[effectiveBars - 1].close;
-  const isEndEquity = isEquitySeries[isEquitySeries.length - 1] ?? initialCapital;
-  const inSampleReturnPct = ((isEndEquity - initialCapital) / initialCapital) * 100;
-  const outOfSampleReturnPct = ((finalEquity - oosStartEquity) / oosStartEquity) * 100;
-  const benchmarkOosReturnPct =
-    ((candles[effectiveBars - 1].close - oosStartPrice) / Math.max(0.01, oosStartPrice)) * 100;
-
-  const wins = closedPnls.filter((p) => p > 0);
-  const losses = closedPnls.filter((p) => p < 0);
-  const grossWin = wins.reduce((s, p) => s + p, 0);
-  const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
-  const winRatePct = closedPnls.length > 0 ? (wins.length / closedPnls.length) * 100 : 0;
-  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? 3.5 : 0;
-
-  const validationFlags: string[] = [];
-  if (closedPnls.length < 3) validationFlags.push('Low Sample');
-  if (inSampleReturnPct > 1.5 && outOfSampleReturnPct < inSampleReturnPct * 0.3) {
-    validationFlags.push('OOS Decay');
-  }
-  if (outOfSampleReturnPct < benchmarkOosReturnPct - 0.5) {
-    validationFlags.push('Trails Benchmark');
-  }
-  if (validationFlags.length === 0) validationFlags.push('Clean Pass');
+  const sim = simulateSingleSymbolWalkForward({
+    symbol,
+    candles,
+    strategy,
+    initialCapital,
+    inSamplePct,
+    limits,
+    minSampleMargin: 10,
+    minTradesForSample: 3,
+  });
 
   return {
     symbol,
     strategyId: strategy.id,
     strategyName: strategy.name,
     strategyVersion: strategy.version,
-    horizonBars: effectiveBars,
-    inSampleReturnPct,
-    outOfSampleReturnPct,
-    benchmarkOosReturnPct,
-    outOfSampleSharpe: calcSharpeFromSeries(oosEquitySeries),
-    maxDrawdownPct: maxDd,
-    winRatePct,
-    profitFactor,
-    tradeCount: closedPnls.length,
-    validationFlags,
-    datasetFingerprint: `discover-15m-${symbol.toLowerCase()}-${effectiveBars}b`,
+    horizonBars: sim.horizonBars,
+    inSampleReturnPct: sim.inSampleReturnPct,
+    outOfSampleReturnPct: sim.outOfSampleReturnPct,
+    benchmarkOosReturnPct: sim.benchmarkOosReturnPct,
+    outOfSampleSharpe: sim.outOfSampleSharpe,
+    maxDrawdownPct: sim.maxDrawdownPct,
+    winRatePct: sim.winRatePct,
+    profitFactor: sim.profitFactor,
+    tradeCount: sim.tradeCount,
+    validationFlags: sim.validationFlags,
+    datasetFingerprint: `discover-15m-${symbol.toLowerCase()}-${sim.horizonBars}b`,
   };
 }
