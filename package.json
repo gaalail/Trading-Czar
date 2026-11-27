@@ -1,0 +1,32 @@
+{
+  "name": "trading-czar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "node server.ts",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0 --port 3000"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/express": "^5.0.6",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "express": "^5.3.0",
+    "lucide-react": "^1.81.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.2"
+  }
+}

@@ -1,0 +1,210 @@
+import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT || 3000);
+const HOST = '0.0.0.0';
+
+const ALLOWED_SYMBOLS = new Set(['NVDA', 'AAPL', 'MSFT', 'SPY', 'QQQ', 'TSLA']);
+const PAPER_BASE_URL = 'https://paper-api.alpaca.markets';
+const DATA_BASE_URL = 'https://data.alpaca.markets';
+
+function getAlpacaPaperConfig() {
+  const apiKey = process.env.ALPACA_API_KEY?.trim() || '';
+  const apiSecret = process.env.ALPACA_API_SECRET?.trim() || '';
+  const baseUrl = (process.env.ALPACA_BASE_URL?.trim() || PAPER_BASE_URL).replace(/\/+$/, '');
+  const feed = process.env.ALPACA_DATA_FEED?.trim() === 'sip' ? 'sip' : 'iex';
+
+  // Fail-closed paper-only lock: refuse any non-paper Alpaca URL
+  const isPaperUrl = baseUrl === PAPER_BASE_URL;
+  const configured = Boolean(apiKey && apiSecret && isPaperUrl);
+
+  return {
+    configured,
+    isPaperUrl,
+    apiKey,
+    apiSecret,
+    baseUrl,
+    feed,
+  };
+}
+
+async function startServer() {
+  const app = express();
+  app.use(express.json({ limit: '256kb' }));
+
+  app.get('/api/alpaca/status', (_req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    res.json({
+      configured: cfg.configured,
+      paperOnlyLocked: cfg.isPaperUrl,
+      feed: cfg.feed,
+      allowedSymbols: Array.from(ALLOWED_SYMBOLS),
+    });
+  });
+
+  app.get('/api/alpaca/bars', async (req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        error: 'Fail-closed guard: ALPACA_BASE_URL must be https://paper-api.alpaca.markets.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.status(503).json({
+        configured: false,
+        error: 'Alpaca paper API keys are not configured in server environment.',
+      });
+    }
+
+    const rawSymbol = String(req.query.symbol || 'NVDA').toUpperCase();
+    if (!ALLOWED_SYMBOLS.has(rawSymbol)) {
+      return res.status(400).json({ error: `Unsupported symbol ${rawSymbol}. US equities/ETFs only.` });
+    }
+
+    const limit = Math.min(500, Math.max(60, Number(req.query.limit || 240)));
+
+    try {
+      const url = `${DATA_BASE_URL}/v2/stocks/${encodeURIComponent(rawSymbol)}/bars?timeframe=15Min&limit=${limit}&adjustment=split&feed=${cfg.feed}`;
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': cfg.apiKey,
+          'APCA-API-SECRET-KEY': cfg.apiSecret,
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        return res.status(response.status).json({
+          error: `Alpaca market data error (${response.status}): ${text.slice(0, 200)}`,
+        });
+      }
+
+      const payload = (await response.json()) as {
+        bars?: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
+      };
+      const rawBars = payload.bars ?? [];
+      const bars = rawBars.map((b, idx) => {
+        const d = new Date(b.t);
+        const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
+        // 14:30 - 21:00 UTC approximates 09:30 - 16:00 ET (standard) / 13:30 - 20:00 (DST)
+        const isRegularHours = mins >= 13 * 60 + 30 && mins < 21 * 60;
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const min = String(d.getUTCMinutes()).padStart(2, '0');
+        return {
+          index: idx,
+          timestamp: `${mm}-${dd} ${hh}:${min}`,
+          isRegularHours,
+          open: b.o,
+          high: b.h,
+          low: b.l,
+          close: b.c,
+          volume: b.v,
+        };
+      });
+
+      return res.json({
+        symbol: rawSymbol,
+        feed: cfg.feed,
+        fingerprint: `alpaca-${cfg.feed}-${rawSymbol.toLowerCase()}-${bars.length}b`,
+        bars,
+      });
+    } catch (err) {
+      return res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to fetch Alpaca market data.',
+      });
+    }
+  });
+
+  app.post('/api/alpaca/paper-order', async (req, res) => {
+    const cfg = getAlpacaPaperConfig();
+    if (!cfg.isPaperUrl) {
+      return res.status(403).json({
+        error: 'Fail-closed guard: non-paper Alpaca endpoints are prohibited.',
+      });
+    }
+    if (!cfg.configured) {
+      return res.status(503).json({
+        configured: false,
+        error: 'Alpaca paper API keys are not configured in server environment.',
+      });
+    }
+
+    const { symbol, side, qty, clientOrderId } = req.body as {
+      symbol?: string;
+      side?: string;
+      qty?: number;
+      clientOrderId?: string;
+    };
+
+    const sym = String(symbol || '').toUpperCase();
+    const orderSide = String(side || '').toLowerCase();
+    const orderQty = Math.floor(Number(qty));
+
+    if (!ALLOWED_SYMBOLS.has(sym)) {
+      return res.status(400).json({ error: `Unsupported symbol: ${sym}` });
+    }
+    if (orderSide !== 'buy' && orderSide !== 'sell') {
+      return res.status(400).json({ error: 'Order side must be buy or sell.' });
+    }
+    if (!Number.isFinite(orderQty) || orderQty <= 0 || orderQty > 5000) {
+      return res.status(400).json({ error: 'Order quantity must be between 1 and 5000 shares.' });
+    }
+
+    try {
+      const response = await fetch(`${PAPER_BASE_URL}/v2/orders`, {
+        method: 'POST',
+        headers: {
+          'APCA-API-KEY-ID': cfg.apiKey,
+          'APCA-API-SECRET-KEY': cfg.apiSecret,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          symbol: sym,
+          qty: String(orderQty),
+          side: orderSide,
+          type: 'market',
+          time_in_force: 'day',
+          client_order_id: clientOrderId || `czar-${sym}-${Date.now()}`,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json({ error: data });
+      }
+      return res.json(data);
+    } catch (err) {
+      return res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to submit paper order to Alpaca.',
+      });
+    }
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(__dirname, 'dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+  }
+
+  app.listen(PORT, HOST, () => {
+    console.log(`Trading-Czar server listening on http://${HOST}:${PORT}`);
+  });
+}
+
+startServer();

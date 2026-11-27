@@ -1,0 +1,5 @@
+{
+  "name": "Trading-Czar",
+  "description": "An attempt to have A.I. Trade in the Market — algorithmic trading strategy simulator, market engine, and portfolio ledger.",
+  "requestFramePermissions": []
+}
