@@ -10,6 +10,33 @@ const HOST = '0.0.0.0';
 const ALLOWED_SYMBOLS = new Set(['NVDA', 'AAPL', 'MSFT', 'SPY', 'QQQ', 'TSLA']);
 const PAPER_BASE_URL = 'https://paper-api.alpaca.markets';
 const DATA_BASE_URL = 'https://data.alpaca.markets';
+const REGISTRY_PATH = path.join(__dirname, 'knowledge', 'experiments', 'registry.json');
+
+interface StoredExperiment {
+  id: string;
+  [key: string]: unknown;
+}
+
+function readRegistryFromDisk(): StoredExperiment[] {
+  try {
+    if (!fs.existsSync(REGISTRY_PATH)) {
+      return [];
+    }
+    const raw = fs.readFileSync(REGISTRY_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as StoredExperiment[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRegistryToDisk(records: StoredExperiment[]): void {
+  const dir = path.dirname(REGISTRY_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(records, null, 2) + '\n', 'utf8');
+}
 
 function getAlpacaPaperConfig() {
   const apiKey = process.env.ALPACA_API_KEY?.trim() || '';
@@ -183,6 +210,59 @@ async function startServer() {
         error: err instanceof Error ? err.message : 'Failed to submit paper order to Alpaca.',
       });
     }
+  });
+
+  app.get('/api/experiments', (_req, res) => {
+    const records = readRegistryFromDisk();
+    res.json({ experiments: records });
+  });
+
+  app.post('/api/experiments', (req, res) => {
+    const record = req.body as StoredExperiment | undefined;
+    if (!record || typeof record.id !== 'string' || typeof record.title !== 'string') {
+      return res.status(400).json({ error: 'Invalid experiment payload: id and title are required.' });
+    }
+    const current = readRegistryFromDisk().filter((item) => item.id !== record.id);
+    const updated = [record, ...current].slice(0, 200);
+    writeRegistryToDisk(updated);
+    return res.status(201).json({ experiment: record });
+  });
+
+  app.patch('/api/experiments/:id', (req, res) => {
+    const id = req.params.id;
+    const patch = req.body as Record<string, unknown> | undefined;
+    if (!patch || typeof patch !== 'object') {
+      return res.status(400).json({ error: 'Invalid patch body.' });
+    }
+    const allowedKeys = new Set(['verdict', 'hypothesis', 'limitations']);
+    const safePatch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (allowedKeys.has(k) && typeof v === 'string') {
+        safePatch[k] = v;
+      }
+    }
+    const current = readRegistryFromDisk();
+    let found: StoredExperiment | null = null;
+    const updated = current.map((item) => {
+      if (item.id === id) {
+        found = { ...item, ...safePatch };
+        return found;
+      }
+      return item;
+    });
+    if (!found) {
+      return res.status(404).json({ error: 'Experiment record not found.' });
+    }
+    writeRegistryToDisk(updated);
+    return res.json({ experiment: found });
+  });
+
+  app.delete('/api/experiments/:id', (req, res) => {
+    const id = req.params.id;
+    const current = readRegistryFromDisk();
+    const updated = current.filter((item) => item.id !== id);
+    writeRegistryToDisk(updated);
+    return res.json({ deleted: id });
   });
 
   if (process.env.NODE_ENV !== 'production') {

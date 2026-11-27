@@ -7,6 +7,7 @@ import {
 } from '../src/engine/data/marketData';
 import { computeMarketBreadth } from '../src/engine/intelligence/breadth';
 import { enrichMarketIntelligence } from '../src/engine/intelligence/indicators';
+import { rankMarketOpportunities } from '../src/engine/intelligence/scanner';
 import {
   computePortfolioStats,
   computeTotalEquity,
@@ -205,5 +206,30 @@ describe('Layer Separation & Research Integrity', () => {
     );
     expect(decision.contributions.some((c) => c.label === 'Market Breadth')).toBe(true);
     expect(decision.contributions.some((c) => c.label === 'Time-of-Day')).toBe(true);
+  });
+
+  it('Opportunity scanner ranks the entire universe read-only by setup score', () => {
+    const market = {} as Record<SymbolId, Candle[]>;
+    const decisions = {} as Record<SymbolId, ReturnType<typeof evaluateModel>>;
+    for (const profile of SYMBOL_LIST) {
+      const { rawCandles } = generateRawSeries(profile.id, 64, 606);
+      market[profile.id] = enrichMarketIntelligence(rawCandles);
+    }
+    for (const profile of SYMBOL_LIST) {
+      decisions[profile.id] = evaluateModel(
+        profile.id,
+        market[profile.id],
+        STRATEGIES['regime-ensemble'],
+        DEFAULT_WEIGHTS,
+        false,
+        0,
+        computeMarketBreadth(market, profile.id)
+      );
+    }
+    const ranked = rankMarketOpportunities(market, decisions);
+    expect(ranked).toHaveLength(SYMBOL_LIST.length);
+    for (let i = 1; i < ranked.length; i++) {
+      expect(ranked[i - 1].opportunityScore).toBeGreaterThanOrEqual(ranked[i].opportunityScore);
+    }
   });
 });

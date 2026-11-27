@@ -63,7 +63,7 @@ export const ExperimentRegistryView: React.FC<ExperimentRegistryViewProps> = ({
               Experiment Registry
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {experiments.length} saved runs persisted locally · Records hypothesis, version, parameters, and limitations
+              {experiments.length} saved runs persisted to knowledge/experiments/registry.json &amp; browser cache
             </p>
           </div>
 

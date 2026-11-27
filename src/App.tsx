@@ -31,6 +31,7 @@ import {
 } from './engine/data/marketData';
 import { computeMarketBreadth } from './engine/intelligence/breadth';
 import { enrichMarketIntelligence } from './engine/intelligence/indicators';
+import { rankMarketOpportunities } from './engine/intelligence/scanner';
 import {
   computePortfolioStats,
   computeTotalEquity,
@@ -190,6 +191,26 @@ export function App() {
       .catch(() => {
         // Keep safe local simulation defaults when backend status is unavailable
       });
+
+    fetch('/api/experiments')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { experiments?: ExperimentRecord[] } | null) => {
+        if (!active || !data || !Array.isArray(data.experiments)) return;
+        if (data.experiments.length > 0) {
+          setExperiments((prev) => {
+            const byId = new Map<string, ExperimentRecord>();
+            for (const item of data.experiments!) byId.set(item.id, item);
+            for (const item of prev) {
+              if (!byId.has(item.id)) byId.set(item.id, item);
+            }
+            return Array.from(byId.values());
+          });
+        }
+      })
+      .catch(() => {
+        // Keep localStorage cache if API is unavailable
+      });
+
     return () => {
       active = false;
     };
@@ -389,6 +410,13 @@ export function App() {
       },
     };
     setExperiments((prev) => [record, ...prev]);
+    fetch('/api/experiments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }).catch(() => {
+      // Fallback to localStorage only
+    });
   };
 
   const activeCandles = workspace.candlesBySymbol[activeSymbol];
@@ -461,6 +489,13 @@ export function App() {
       },
     };
     setExperiments((prev) => [record, ...prev]);
+    fetch('/api/experiments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }).catch(() => {
+      // Fallback to localStorage only
+    });
   };
 
   const openPositions = useMemo(
@@ -471,6 +506,15 @@ export function App() {
   const breadth = useMemo(
     () => computeMarketBreadth(workspace.candlesBySymbol, activeSymbol),
     [workspace.candlesBySymbol, activeSymbol]
+  );
+
+  const opportunities = useMemo(
+    () =>
+      rankMarketOpportunities(
+        workspace.candlesBySymbol,
+        workspace.decisionsByStrategy[activeStrategyId]
+      ),
+    [workspace.candlesBySymbol, workspace.decisionsByStrategy, activeStrategyId]
   );
 
   const investedValue = totalEquity - activePortfolio.cash;
@@ -1154,6 +1198,94 @@ export function App() {
                   )}
                 </div>
               </section>
+
+              <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      Universe Setup Scanner · {currentStrategyConfig.name}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Read-only intelligence ranking across the tracked US equity &amp; ETF universe — click any row to inspect on chart
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                    Top Setup: {opportunities[0]?.symbol ?? activeSymbol} ({opportunities[0]?.opportunityScore.toFixed(1) ?? '0.0'})
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <th className="py-2.5 px-4">Symbol</th>
+                        <th className="py-2.5 px-4 text-right">Last Price</th>
+                        <th className="py-2.5 px-4">Regime</th>
+                        <th className="py-2.5 px-4">Session</th>
+                        <th className="py-2.5 px-4 text-right">BB Z-Score</th>
+                        <th className="py-2.5 px-4 text-right">Vol Z</th>
+                        <th className="py-2.5 px-4 text-right">ATR %</th>
+                        <th className="py-2.5 px-4">Signal</th>
+                        <th className="py-2.5 px-4 text-right">Setup Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70 text-xs">
+                      {opportunities.map((row) => {
+                        const isSelected = row.symbol === activeSymbol;
+                        return (
+                          <tr
+                            key={row.symbol}
+                            onClick={() => setActiveSymbol(row.symbol)}
+                            className={`cursor-pointer transition-colors ${
+                              isSelected
+                                ? 'bg-slate-100/90 dark:bg-slate-800/70'
+                                : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                            }`}
+                          >
+                            <td className="py-2.5 px-4 font-mono font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                              {row.symbol}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                              ${row.price.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              {row.regime}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                              {row.sessionWindow}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                              {row.zScore20 >= 0 ? '+' : ''}
+                              {row.zScore20.toFixed(2)}σ
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                              {row.volumeZ >= 0 ? '+' : ''}
+                              {row.volumeZ.toFixed(2)}σ
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                              {row.atrPct.toFixed(2)}%
+                            </td>
+                            <td
+                              className={`py-2.5 px-4 font-mono font-semibold whitespace-nowrap ${
+                                row.action === 'BUY'
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : row.action === 'SELL'
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              {row.action} · {(row.confidence * 100).toFixed(0)}%
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                              {row.opportunityScore.toFixed(1)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </>
           )}
 
@@ -1203,14 +1335,26 @@ export function App() {
           {activeTab === 'experiments' && (
             <ExperimentRegistryView
               experiments={experiments}
-              onUpdateExperiment={(id, patch) =>
+              onUpdateExperiment={(id, patch) => {
                 setExperiments((prev) =>
                   prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
-                )
-              }
-              onDeleteExperiment={(id) =>
-                setExperiments((prev) => prev.filter((item) => item.id !== id))
-              }
+                );
+                fetch(`/api/experiments/${encodeURIComponent(id)}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(patch),
+                }).catch(() => {
+                  // Fallback to localStorage only
+                });
+              }}
+              onDeleteExperiment={(id) => {
+                setExperiments((prev) => prev.filter((item) => item.id !== id));
+                fetch(`/api/experiments/${encodeURIComponent(id)}`, {
+                  method: 'DELETE',
+                }).catch(() => {
+                  // Fallback to localStorage only
+                });
+              }}
               onSnapshotActiveSleeve={handleSnapshotActiveSleeve}
             />
           )}
